@@ -1,0 +1,316 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- To be able to display contacts list & match calling/called numbers -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
+    <!-- Starting Android 13 we need to ask notification permission -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+    <!-- Needed for full screen intent in incoming call notifications -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- To vibrate while receiving an incoming call -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Needed for foreground service
+    (https://developer.android.com/guide/components/foreground-services) -->
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <!-- Needed for Android 14
+    https://developer.android.com/about/versions/14/behavior-changes-14#fgs-types -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+    <!-- Required for foreground service started when a push is being received,
+    without it app won't be able to access network if data saver is ON (for example) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Needed to keep a permanent foreground service and keep app alive to be able to receive
+    messages & calls for third party accounts for which push notifications aren't available,
+    and starting Android 15 dataSync is limited to 6 hours per day
+    and can't be used with RECEIVE_BOOT_COMPLETED intent either -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- Required starting Android 17 to be able to connect to local network server -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+
+    <!-- Needed for auto start at boot if keep alive service is enabled -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- MundoPhone (E1), redirección de llamadas del teléfono nativo: CALL_PHONE para relanzar por la SIM la llamada
+         cuando se elige «SIM» en la pregunta (se pide en ese momento; sin él se abre el marcador con el número), y el
+         estado de la red para dejar pasar la llamada por la SIM si no hay Internet. CALL_PHONE haría obligatoria la
+         telefonía en Google Play: se declara opcional para no esconder la app a las tabletas sin SIM. -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
+
+    <application
+        android:name=".LinphoneApplication"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:enableOnBackInvokedCallback="true"
+        android:localeConfig="@xml/locales_config"
+        android:theme="@style/Theme.Linphone"
+        android:appCategory="social"
+        android:largeHeap="true"
+        tools:targetApi="35">
+
+        <!-- MundoPhone NO es una app de Android Auto: Play rechaza el bundle con esta entrada («Auto App Quality
+             Guidelines: Category not permitted») y el arreglo es quitar esta entrada de todo bundle. Volver a ponerla
+             (o el CarAppService de abajo) mete la app otra vez en la revisión de Android Auto. -->
+
+        <!-- Por lo mismo: fuera los componentes propios de la librería car del manifest combinado -->
+        <activity
+            android:name="androidx.car.app.CarAppPermissionActivity"
+            tools:node="remove" />
+        <receiver
+            android:name="androidx.car.app.notification.CarAppNotificationBroadcastReceiver"
+            tools:node="remove" />
+
+        <!--<meta-data
+            android:name="androidx.car.app.minCarApiLevel"
+            android:value="1"/>-->
+
+        <activity
+            android:name=".ui.main.MainActivity"
+            android:theme="@style/AppSplashScreenTheme"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="true"
+            android:launchMode="singleTask">
+
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_LOCUS" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/*" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="application/*" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="application/*" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL" />
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.CALL" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tel" />
+                <data android:scheme="sip" />
+                <data android:scheme="callto" />
+                <data android:scheme="sips" />
+                <data android:scheme="sip-linphone" />
+                <data android:scheme="sips-linphone" />
+                <data android:scheme="linphone-sip" />
+                <data android:scheme="linphone-sips" />
+                <data android:scheme="linphone-config" />
+            </intent-filter>
+
+        </activity>
+
+        <activity
+            android:name=".ui.welcome.WelcomeActivity"
+            android:windowSoftInputMode="adjustResize"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true" />
+
+        <activity
+            android:name=".ui.assistant.AssistantActivity"
+            android:windowSoftInputMode="adjustResize"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true" />
+
+        <activity
+            android:name=".ui.sso.SingleSignOnActivity"
+            android:windowSoftInputMode="adjustResize"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true" />
+
+        <activity
+            android:name=".ui.fileviewer.MediaViewerActivity"
+            android:windowSoftInputMode="adjustResize"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true" />
+
+        <activity
+            android:name=".ui.fileviewer.FileViewerActivity"
+            android:windowSoftInputMode="adjustResize"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true" />
+
+        <!-- MundoPhone (E1): la pregunta «¿con MundoPhone o con la SIM?». Tarea propia y fuera de recientes: al cerrarla
+             se vuelve al marcador del teléfono, no a MundoPhone. -->
+        <activity
+            android:name=".ui.redirection.CallRedirectionActivity"
+            android:theme="@style/Theme.LinphoneCallRedirection"
+            android:exported="false"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode" />
+
+        <activity
+            android:name=".ui.call.CallActivity"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.LinphoneInCall"
+            android:parentActivityName=".ui.main.MainActivity"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:turnScreenOn="true"
+            android:showWhenLocked="true"
+            android:resizeableActivity="true"
+            android:supportsPictureInPicture="true" />
+
+        <!-- Services -->
+
+        <service
+            android:name=".core.CoreInCallService"
+            android:exported="false"
+            android:foregroundServiceType="phoneCall|camera|microphone"
+            android:stopWithTask="false"
+            android:label="@string/app_name" />
+
+        <!-- MundoPhone (E1): Telecom le pasa las llamadas que se marcan en el teléfono nativo (Android 10+, con el rol
+             ROLE_CALL_REDIRECTION, que se pide en Ajustes > Llamadas). -->
+        <service
+            android:name=".telecom.redirection.MundoPhoneCallRedirectionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_CALL_REDIRECTION_SERVICE"
+            tools:targetApi="29">
+            <intent-filter>
+                <action android:name="android.telecom.CallRedirectionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".core.CorePushService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            android:stopWithTask="false"
+            android:label="@string/app_name" />
+
+        <service
+            android:name=".core.CoreFileTransferService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            android:stopWithTask="false"
+            android:label="@string/app_name" />
+
+        <!-- MundoPhone (F4): el FirebaseMessaging del SDK con una marca de tiempo al recibir (el SDK la escribe solo en
+             logcat); el resto, igual -->
+        <service android:name=".core.MundoPhoneFirebaseMessaging"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".core.CoreKeepAliveThirdPartyAccountsService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:stopWithTask="false"
+            android:label="@string/app_name">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Needed to keep app alive to be able to receive messages and calls from third party SIP servers for which push notifications aren't available." />
+        </service>
+
+        <!--<service
+            android:name=".telecom.auto.AndroidAutoService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.car.app.CarAppService"/>
+                <category android:name="androidx.car.app.category.CALLING"/>
+            </intent-filter>
+        </service>-->
+
+        <!-- Receivers -->
+
+        <receiver android:name=".core.CorePushReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="org.linphone.core.action.PUSH_RECEIVED"/>
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".notifications.NotificationBroadcastReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
+        <receiver android:name=".core.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- MundoPhone (E4): widget de favoritos. Exportado porque el sistema le manda APPWIDGET_UPDATE; no se
+             actualiza solo (updatePeriodMillis=0 en favorites_widget_info): lo hace la app al cambiar los favoritos. -->
+        <receiver
+            android:name="org.linphone.favorites.FavoritesWidgetProvider"
+            android:exported="true"
+            android:label="@string/contacts_list_favourites_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/favorites_widget_info" />
+        </receiver>
+
+        <!-- Providers -->
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="@string/file_provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/provider_paths" />
+        </provider>
+
+    </application>
+
+</manifest>

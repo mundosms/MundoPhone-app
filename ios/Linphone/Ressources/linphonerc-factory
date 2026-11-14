@@ -1,0 +1,91 @@
+
+## Start of factory rc
+
+# This file shall not contain path referencing package name, in order to be portable when app is renamed.
+# Paths to resources must be set from LinphoneManager, after creating LinphoneCore.
+
+[net]
+mtu=1300
+force_ice_disablement=0
+
+[rtp]
+accept_any_encryption=1
+# MundoPhone: el bloque [rtp] de Android (su linphonerc_factory), con los mismos valores. Va en el factory, como allí:
+# lpconfig.c lo lee DESPUÉS de la configuración del usuario (_linphone_config_apply_factory_config), así que manda en
+# cada arranque, también en una configuración ya existente. Ninguno se puede cambiar desde la app.
+# Sin RTCP-XR ni TMMBR (acordado con el borde; aligeran el SDP). Los lee media-session.cpp.
+rtcp_xr_enabled=0
+rtcp_fb_tmmbr_enabled=0
+# Colchón de jitter con techo y que encoge rápido (ortp jitterctl.c; lo lee ms2-stream.cpp, applyJitterBufferParams). Por
+# defecto el objetivo salta al mayor parón visto (hasta 500 ms), lo recuerda 2 periodos de 5 s y baja 20 ms cada 5 s: un
+# parón de ~0,7 s del llamante dejaba 610-750 ms de retraso el resto de la llamada (medido en registros de Android).
+# Medido en el borde (1,5 h): el 97,6 % de las llamadas de 3 min no recibe ningún parón de más de 0,25 s, y el operador
+# llega a 0,6 s en ratos malos. Por encima del techo, el parón se oye como un corte corto en vez de quedarse como retraso.
+# min se queda en 40: la FEC de Opus necesita el paquete siguiente dentro del colchón (msopus.c).
+# El colchón está en el camino de RECEPCIÓN (ortp), antes del descodificador y de la AudioUnit, y es el mismo código en las
+# dos apps. Su reloj es el de la captura en los dos sistemas: en iOS msiounit.mm sincroniza el ticker con las muestras de la
+# AudioUnit y lo resincroniza en cada salto (cambio de ruta), igual que el msaaudio parcheado de Android. Lo único que
+# pediría otro mínimo es que la AudioUnit entregara la captura en bloques de 40 ms o más: el SDK no fija IOBufferDuration
+# y lo escribe al arrancar («AudioUnit started ... iobuf[...]»): en un iPhone son 23 ms.
+jitter_buffer_min_size=40
+jitter_buffer_max_size=300
+jitter_buffer_refresh_period=2500
+jitter_buffer_ramp_refresh_period=1000
+jitter_buffer_ramp_step=20
+# Algoritmo «basic» en vez de «rls» (el de fábrica). El RLS estima la pendiente entre relojes y un parón de red de ~0,75 s
+# le hace creer que el reloj del otro lado va al 0,86 (visto en un registro de Android): los paquetes se programan más
+# tarde y el colchón retiene 0,5 s durante el primer minuto. Medido en un banco de pruebas (4 pasadas, con el
+# mediastreamer2 de Linux): tras un parón de 750 ms, rls 384-416 ms de pico y 214 ms a los 15 s; basic 134 ms de pico y
+# 55 ms a los 15 s; con 1,5 s, rls 577-671 → 276-309 y basic 300 → 54. Sin parón basic añade ~10 ms (54 frente a 44). La
+# calidad (PESQ) es la misma.
+jitter_buffer_algorithm=basic
+
+[sip]
+guess_hostname=1
+register_only_when_network_is_up=1
+auto_net_state_mon=1
+auto_answer_replacing_calls=1
+ping_with_options=0
+use_cpim=0
+zrtp_key_agreements_suites=MS_ZRTP_KEY_AGREEMENT_K255_MLK512,MS_ZRTP_KEY_AGREEMENT_K255_KYB512
+chat_messages_aggregation_delay=1000
+chat_messages_aggregation=1
+update_presence_model_timestamp_before_publish_expires_refresh=1
+
+[sound]
+#remove this property for any application that is not Linphone public version itself
+ec_calibrator_cool_tones=1
+disable_ringing=0
+
+[audio]
+
+[video]
+auto_resize_preview_to_keep_ratio=1
+max_conference_size=vga
+
+[misc]
+enable_basic_to_client_group_chat_room_migration=0
+enable_simple_group_chat_message_state=0
+aggregate_imdn=0
+notify_each_friend_individually_when_presence_received=0
+store_friends=0
+
+[app]
+record_aware=1
+
+backend=1
+
+[lime]
+lime_update_threshold=86400
+
+[alerts]
+alerts_enabled=1
+
+[proxy_default_values]
+force_register_on_push=1
+reg_expires=2678400
+reg_sendregister=1
+remote_push_notification_allowed=1
+push_notification_allowed=1
+
+## End of factory rc

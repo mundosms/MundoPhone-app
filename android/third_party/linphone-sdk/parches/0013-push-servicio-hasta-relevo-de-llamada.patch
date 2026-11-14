@@ -1,0 +1,81 @@
+diff --git a/liblinphone/wrappers/java/classes/org/linphone/core/tools/AndroidPlatformHelper.java b/liblinphone/wrappers/java/classes/org/linphone/core/tools/AndroidPlatformHelper.java
+index 1cedca5..b44ab5f 100644
+--- a/liblinphone/wrappers/java/classes/org/linphone/core/tools/AndroidPlatformHelper.java
++++ b/liblinphone/wrappers/java/classes/org/linphone/core/tools/AndroidPlatformHelper.java
+@@ -152,6 +152,9 @@ public class AndroidPlatformHelper {
+ 
+     private Class mPushServiceClass;
+     private boolean mPushServiceStarted;
++    // MundoSMS (0013): la parada del servicio de push está aplazada hasta que el de llamada pase a primer plano
++    private boolean mPushServiceStopPending;
++    private static final long PUSH_SERVICE_HANDOVER_MAX_MS = 5000;
+ 
+     private Class mFileTransferServiceClass;
+     private boolean mFileTransferServiceStarted;
+@@ -1364,14 +1367,45 @@ public class AndroidPlatformHelper {
+         MediastreamerAndroidContext.disableVolumeWorkaround(disable);
+     }
+ 
+-    public void startPushService() {
++    public synchronized void startPushService() {
++        mPushServiceStopPending = false;
+         Log.i("[Platform Helper] Starting foreground push service");
+         Intent i = new Intent(mContext, mPushServiceClass);
+         DeviceUtils.startForegroundService(mContext, i);
+         mPushServiceStarted = true;
+     }
+ 
+-    public void stopPushService() {
++    /*
++     * MundoSMS (0013): al llegar el INVITE del push, CorePrivate::addCall paraba el servicio en primer plano del push en el
++     * acto, y el de la llamada (CoreService) pasa a primer plano unos 160 ms después. Con la app arrancada por el push y la
++     * red bloqueada por Doze, en ese hueco Android vuelve a bloquear la red, updateNetworkReachability la da por caída y se
++     * cierran los transportes: el borde vio el RST de la conexión TCP 0,1 s después del 100 Trying, el CANCEL ya no llegaba
++     * y la app contestaba después una llamada que ya no existía. Con una llamada en curso, la parada espera a que el
++     * servicio de llamada esté en primer plano (setServiceRunningAsForeground), como mucho PUSH_SERVICE_HANDOVER_MAX_MS.
++     */
++    public synchronized void stopPushService() {
++        if (!mPushServiceStarted) return;
++        if (mCore != null && mCore.getCallsNb() > 0 && !mServiceRunningInForeground) {
++            if (mPushServiceStopPending) return;
++            mPushServiceStopPending = true;
++            Log.i("[Platform Helper] Call in progress and Core Service not in foreground yet, keeping foreground push service until it is (MundoSMS patch)");
++            dispatchOnCoreThreadAfter(new Runnable() {
++                @Override
++                public void run() {
++                    synchronized (AndroidPlatformHelper.this) {
++                        if (!mPushServiceStopPending) return;
++                        Log.w("[Platform Helper] Core Service not in foreground after " + PUSH_SERVICE_HANDOVER_MAX_MS + " ms, stopping foreground push service anyway (MundoSMS patch)");
++                        stopPushServiceNow();
++                    }
++                }
++            }, PUSH_SERVICE_HANDOVER_MAX_MS);
++            return;
++        }
++        stopPushServiceNow();
++    }
++
++    private synchronized void stopPushServiceNow() {
++        mPushServiceStopPending = false;
+         if (mPushServiceStarted) {
+             Log.i("[Platform Helper] Foreground push service is no longer required");
+             Intent i = new Intent(mContext, mPushServiceClass);
+@@ -1908,12 +1942,17 @@ public class AndroidPlatformHelper {
+         }
+     }
+ 
+-    public void setServiceRunningAsForeground(boolean foreground) {
++    public synchronized void setServiceRunningAsForeground(boolean foreground) {
+         if (foreground == mServiceRunningInForeground) return;
+         mServiceRunningInForeground = foreground;
+         
+         if (mServiceRunningInForeground) {
+             Log.i("[Platform Helper] Core Service is now running in foreground");
++            // MundoSMS (0013): relevo hecho, ya se puede parar el servicio de push
++            if (mPushServiceStopPending) {
++                Log.i("[Platform Helper] Core Service took over, stopping foreground push service (MundoSMS patch)");
++                stopPushServiceNow();
++            }
+         } else {
+             Log.i("[Platform Helper] Core Service is no longer running in foreground");
+         }

@@ -1,0 +1,7 @@
+/* Textos de los permisos de iOS en español (la base en inglés está en los INFOPLIST_KEY_* del proyecto). */
+"NSCameraUsageDescription" = "La cámara se usa en las videollamadas y para escanear el código QR de configuración.";
+"NSContactsUsageDescription" = "Para llamar a tus contactos desde MundoPhone.";
+"NSLocalNetworkUsageDescription" = "MundoPhone necesita la red local para establecer las llamadas.";
+"NSMicrophoneUsageDescription" = "El micrófono es necesario para las llamadas.";
+"NSPhotoLibraryUsageDescription" = "Para compartir fotos y personalizar los avatares.";
+"NSCalendarsUsageDescription" = "Para añadir las reuniones a tu calendario.";

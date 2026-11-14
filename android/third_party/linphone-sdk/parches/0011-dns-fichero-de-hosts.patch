@@ -1,0 +1,20 @@
+diff --git a/liblinphone/coreapi/linphonecore.c b/liblinphone/coreapi/linphonecore.c
+index e8b030c..591d8b3 100644
+--- a/liblinphone/coreapi/linphonecore.c
++++ b/liblinphone/coreapi/linphonecore.c
+@@ -1571,6 +1571,15 @@ static void net_config_read(LinphoneCore *lc) {
+ 	linphone_core_enable_dns_srv(lc, !!tmp);
+ 	tmp = linphone_config_get_int(lc->config, "net", "dns_search_enabled", 1);
+ 	linphone_core_enable_dns_search(lc, !!tmp);
++	/* MundoSMS: fichero de hosts propio ([net] dns_user_hosts_file), que belle-sip consulta antes que el DNS y relee en
++	 * cada resolución. La app lo escribe con la IP que le da el resolvedor de Android (que tiene caché): así el REGISTER
++	 * de un arranque en frío por push no espera ~150 ms a la consulta DNS de belle-sip, que no tiene caché. La API ya
++	 * existía en belle-sip y en Sal, pero solo se usaba en los tests. */
++	tmpstr = linphone_config_get_string(lc->config, "net", "dns_user_hosts_file", NULL);
++	if (tmpstr != NULL && tmpstr[0] != '\0' && lc->sal) {
++		lc->sal->setDnsUserHostsFile(tmpstr);
++		bctbx_message("DNS user hosts file set to [%s] (MundoSMS patch)", tmpstr);
++	}
+ 
+ 	// Update existing friend list subscribe state, otherwise change won't be applied until next core creation.
+ 	bool subscribe_enabled = L_GET_CPP_PTR_FROM_C_OBJECT(lc)->isFriendListSubscriptionEnabled();

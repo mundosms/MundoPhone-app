@@ -1,0 +1,115 @@
+diff --git a/liblinphone/wrappers/java/classes/org/linphone/core/tools/firebase/FirebaseMessaging.java b/liblinphone/wrappers/java/classes/org/linphone/core/tools/firebase/FirebaseMessaging.java
+index 953c0bd..29ff180 100644
+--- a/liblinphone/wrappers/java/classes/org/linphone/core/tools/firebase/FirebaseMessaging.java
++++ b/liblinphone/wrappers/java/classes/org/linphone/core/tools/firebase/FirebaseMessaging.java
+@@ -30,8 +30,14 @@ import android.content.pm.ResolveInfo;
+ import com.google.firebase.messaging.FirebaseMessagingService;
+ import com.google.firebase.messaging.RemoteMessage;
+ 
++import android.os.SystemClock;
++
++import org.linphone.core.Account;
++import org.linphone.core.Call;
+ import org.linphone.core.Core;
++import org.linphone.core.CoreListenerStub;
+ import org.linphone.core.GlobalState;
++import org.linphone.core.RegistrationState;
+ import org.linphone.core.tools.Log;
+ import org.linphone.core.tools.compatibility.DeviceUtils;
+ import org.linphone.core.tools.AndroidPlatformHelper;
+@@ -40,6 +46,8 @@ import org.linphone.core.tools.service.AndroidDispatcher;
+ import java.lang.StringBuilder;
+ import java.util.List;
+ import java.util.Map;
++import java.util.concurrent.CountDownLatch;
++import java.util.concurrent.TimeUnit;
+ 
+ import org.json.JSONObject;
+ 
+@@ -66,9 +74,20 @@ public class FirebaseMessaging extends FirebaseMessagingService {
+         }
+     }
+ 
++    /*
++     * MundoSMS: onMessageReceived devolvía al instante (el trabajo va a otros hilos). Con eso el servicio de FCM termina,
++     * el proceso pasa a «cached» y Android (congelador de Android 14, Freecess de Samsung) lo puede congelar con la conexión
++     * TCP recién abierta y el REGISTER sin mandar, aunque haya wakelocks: el borde vio conexiones de 22-26 s sin datos y
++     * pushes sin REGISTER (llamadas perdidas). Mientras este método no vuelve, el proceso no es «cached». Se espera, como
++     * mucho PUSH_HOLD_MS, a que una cuenta quede registrada (o falle) o a que llegue la llamada. FCM da hasta ~20 s.
++     */
++    private static final long PUSH_HOLD_MS = 8500;
++
+     @Override
+     public void onMessageReceived(RemoteMessage remoteMessage) {
+-        android.util.Log.i("FirebaseMessaging", "[Push Notification] Received");
++        android.util.Log.i("FirebaseMessaging", "[Push Notification] Received, sent ["
++                + (System.currentTimeMillis() - remoteMessage.getSentTime()) + "] ms ago, priority ["
++                + remoteMessage.getPriority() + "/" + remoteMessage.getOriginalPriority() + "]");
+         Runnable pushRunnable = new Runnable() {
+             @Override
+             public void run() {
+@@ -76,7 +95,63 @@ public class FirebaseMessaging extends FirebaseMessagingService {
+             }
+         };
+         AndroidDispatcher.dispatchOnUIThread(pushRunnable);
+-        
++        holdUntilRegisteredOrCall();
++    }
++
++    private void holdUntilRegisteredOrCall() {
++        final long start = SystemClock.elapsedRealtime();
++        final long deadline = start + PUSH_HOLD_MS;
++        try {
++            // Arranque en frío: el Core lo crea la aplicación; se espera a que exista
++            while (!AndroidPlatformHelper.isReady() && SystemClock.elapsedRealtime() < deadline) {
++                Thread.sleep(50);
++            }
++            if (!AndroidPlatformHelper.isReady()) {
++                android.util.Log.w("FirebaseMessaging", "[Push Notification] Core not ready after [" + PUSH_HOLD_MS + "] ms, not holding (MundoSMS patch)");
++                return;
++            }
++            final CountDownLatch done = new CountDownLatch(1);
++            final String[] reason = new String[] { "timeout" };
++            final CoreListenerStub listener = new CoreListenerStub() {
++                @Override
++                public void onAccountRegistrationStateChanged(Core core, Account account, RegistrationState state, String message) {
++                    if (state == RegistrationState.Ok || state == RegistrationState.Failed) {
++                        reason[0] = "registration " + state;
++                        done.countDown();
++                    }
++                }
++
++                @Override
++                public void onCallStateChanged(Core core, Call call, Call.State state, String message) {
++                    if (state == Call.State.IncomingReceived || state == Call.State.IncomingEarlyMedia) {
++                        reason[0] = "call " + state;
++                        done.countDown();
++                    }
++                }
++            };
++            AndroidPlatformHelper.instance().dispatchOnCoreThread(new Runnable() {
++                @Override
++                public void run() {
++                    Core core = AndroidPlatformHelper.isReady() ? AndroidPlatformHelper.instance().getCore() : null;
++                    if (core != null) core.addListener(listener);
++                }
++            });
++            long remaining = deadline - SystemClock.elapsedRealtime();
++            if (remaining > 0) done.await(remaining, TimeUnit.MILLISECONDS);
++            AndroidPlatformHelper.instance().dispatchOnCoreThread(new Runnable() {
++                @Override
++                public void run() {
++                    Core core = AndroidPlatformHelper.isReady() ? AndroidPlatformHelper.instance().getCore() : null;
++                    if (core != null) core.removeListener(listener);
++                }
++            });
++            android.util.Log.i("FirebaseMessaging", "[Push Notification] Service held [" + (SystemClock.elapsedRealtime() - start)
++                    + "] ms until " + reason[0] + " (MundoSMS patch)");
++        } catch (InterruptedException e) {
++            Thread.currentThread().interrupt();
++        } catch (Exception e) {
++            android.util.Log.e("FirebaseMessaging", "[Push Notification] Hold failed: " + e);
++        }
+     }
+ 
+     private void onPushReceived(RemoteMessage remoteMessage) {

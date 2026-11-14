@@ -1,0 +1,78 @@
+
+## Start of default rc
+
+[sip]
+contact="MundoPhone iPhone" <sip:mundophone.iphone@unknown-host>
+use_info=0
+use_ipv6=1
+keepalive_period=30000
+sip_port=-1
+sip_tcp_port=-1
+sip_tls_port=-1
+media_encryption=none
+update_presence_model_timestamp_before_publish_expires_refresh=1
+use_rfc2833=1
+use_info=1
+rls_uri=
+use_cpim=0
+# MundoPhone: early media en las entrantes
+incoming_calls_early_media=1
+
+[net]
+#Because dynamic bitrate adaption can increase bitrate, we must allow "no limit"
+download_bw=0
+upload_bw=0
+
+[video]
+size=vga
+# MundoPhone: el vídeo no se acepta solo, como en Android (la respuesta sale con m=video puerto 0 y la llamada sigue
+# solo con audio). Va aquí y no en el factory porque se puede cambiar (aprovisionamiento); a una configuración ya
+# existente con 1 se lo cambia una vez CoreContext.mundosmsPoliticaDeMedios ([app] mundosms_media_policy).
+automatically_accept=0
+automatically_initiate=0
+automatically_accept_direction=2 #receive only
+
+[app]
+tunnel=disabled
+auto_download_incoming_voice_recordings=1
+auto_download_incoming_icalendars=1
+
+[tunnel]
+host=
+port=443
+
+[misc]
+# Registros a nuestro servidor de soporte, como Android. La app pone la URL completa, con lo que escribe el usuario,
+# justo antes de subir ([app] mundosms_logs_upload_url); esta es la de reposo.
+log_collection_upload_server_url=https://mundophonedebug.mundosms.es/upload
+# Sin servidores de Belledonne (como Android): ni ficheros del chat ni comprobación de versión.
+file_transfer_server_url=
+version_check_url_root=
+max_calls=10
+history_max_size=100
+conference_layout=1
+hide_empty_chat_rooms=1
+
+[fec]
+fec_enabled=1
+
+[magic_search]
+return_empty_friends=1
+
+[chat]
+imdn_to_everybody_threshold=0
+
+[ui]
+# Vacío: con un filtro, allContact queda en false y se esconden los contactos del teléfono.
+contacts_filter=
+# MundoPhone: sin reuniones.
+disable_meetings_feature=1
+
+[proxy_default_values]
+force_register_on_push=1
+reg_expires=2678400
+reg_sendregister=1
+remote_push_notification_allowed=1
+push_notification_allowed=1
+
+## End of default rc

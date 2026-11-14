@@ -1,0 +1,20 @@
+diff --git a/msaaudio/msaaudio_recorder.cpp b/msaaudio/msaaudio_recorder.cpp
+--- a/msaaudio/msaaudio_recorder.cpp
++++ b/msaaudio/msaaudio_recorder.cpp
+@@ -514,12 +514,10 @@
+ 	AAudioInputContext *ictx = (AAudioInputContext*)obj->data;
+ 
+ 	if (playback_card->device_type == MSSndCardDeviceType::MS_SND_CARD_DEVICE_TYPE_SPEAKER) {
+-		if (ictx->soundCard->alternative_id != -1) {
+-			ms_message("[AAudio Recorder] Speaker device is being used, switching to microphone at the back of the device [%0d]", ictx->soundCard->alternative_id);
+-			android_snd_read_set_internal_device_id(ictx, ictx->soundCard->alternative_id);
+-		} else {
+-			ms_warning("[AAudio Recorder] No alternative microphone ID found, doing nothing...");
+-		}
++		// MundoSMS patch: keep the current microphone. Switching to the back one (alternative_id) means reopening the
++		// recorder, and AAudioStreamBuilder_openStream blocks ~0.5-0.8 s while Android changes the route (A52s): the
++		// uplink is cut on every switch to speaker. The output change is done by the player alone.
++		ms_message("[AAudio Recorder] Speaker device is being used, keeping current microphone [%0d] (MundoSMS patch, based on 5.5.35)", ictx->deviceId);
+ 	} else if (playback_card->device_type == MSSndCardDeviceType::MS_SND_CARD_DEVICE_TYPE_EARPIECE) {
+ 		ms_message("[AAudio Recorder] Earpiece device is being used, switching to microphone at the bottom of the device [%0d]", ictx->soundCard->internal_id);
+ 		android_snd_read_set_internal_device_id(ictx, ictx->soundCard->internal_id);

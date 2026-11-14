@@ -1,0 +1,37 @@
+diff --git a/ortp/src/rtpsession.c b/ortp/src/rtpsession.c
+index 0bb8082..a98af9c 100644
+--- a/ortp/src/rtpsession.c
++++ b/ortp/src/rtpsession.c
+@@ -1795,6 +1795,32 @@ end:
+ 		rtp = (rtp_header_t *)mp->b_rptr;
+ 		packet_ts = rtp_header_get_timestamp(rtp);
+ 		ortp_debug("Returning mp with ts=%i", packet_ts);
++		/* MundoSMS (banco): tiempo que pasa cada paquete en el colchón (entregado - llegado), por segundo, solo con
++		 * MS_JB_TRACE en el entorno. Es el retraso que añade el colchón; la salida a fichero del banco no lo mide. */
++		{
++			static int jb_trace = -1;
++			static struct timeval jb_t0, jb_last;
++			static double jb_sum = 0, jb_max = 0;
++			static int jb_n = 0;
++			if (jb_trace < 0) jb_trace = getenv("MS_JB_TRACE") != NULL;
++			if (jb_trace && mp->timestamp.tv_sec != 0) {
++				struct timeval now;
++				double res;
++				bctbx_gettimeofday(&now, NULL);
++				if (jb_t0.tv_sec == 0) jb_t0 = jb_last = now;
++				res = (now.tv_sec - mp->timestamp.tv_sec) * 1000.0 + (now.tv_usec - mp->timestamp.tv_usec) / 1000.0;
++				jb_sum += res;
++				if (res > jb_max) jb_max = res;
++				jb_n++;
++				if ((now.tv_sec - jb_last.tv_sec) * 1000 + (now.tv_usec - jb_last.tv_usec) / 1000 >= 1000) {
++					ortp_message("MundoSMS JB trace: t=%ld residence avg=%.0f max=%.0f n=%d",
++					             (long)(now.tv_sec - jb_t0.tv_sec), jb_sum / jb_n, jb_max, jb_n);
++					jb_last = now;
++					jb_sum = jb_max = 0;
++					jb_n = 0;
++				}
++			}
++		}
+ 		/* check for payload type changes */
+ 		if (session->rcv.pt != rtp->paytype) {
+ 			payload_type_changed_notify(session, rtp->paytype);

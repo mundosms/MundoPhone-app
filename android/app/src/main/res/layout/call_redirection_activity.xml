@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MundoPhone (E1): la pregunta de la redirección de llamadas (CallRedirectionActivity), encima del marcador del
+     teléfono. Mismo aspecto que los diálogos de la app (DialogUtils): fondo negro al 60 % y la tarjeta en medio. -->
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:id="@+id/card"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:background="@drawable/shape_dialog_background"
+        android:clickable="true"
+        android:focusable="false"
+        android:orientation="vertical"
+        android:paddingStart="15dp"
+        android:paddingEnd="15dp"
+        android:paddingTop="@dimen/dialog_top_bottom_margin"
+        android:paddingBottom="@dimen/dialog_top_bottom_margin"
+        app:layout_constraintWidth_max="@dimen/dialog_max_width"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <androidx.appcompat.widget.AppCompatTextView
+            style="@style/section_header_style"
+            android:id="@+id/title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <androidx.appcompat.widget.AppCompatTextView
+            style="@style/default_text_style"
+            android:id="@+id/message"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/call_redirection_dialog_message"
+            android:textSize="14sp" />
+
+        <!-- MundoPhone: recordar para este número o para todos; una deshabilita la otra -->
+        <androidx.appcompat.widget.AppCompatCheckBox
+            style="@style/default_text_style"
+            android:id="@+id/remember_number"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/call_redirection_dialog_remember_number"
+            android:textSize="14sp"
+            app:buttonTint="?attr/color_main1_500" />
+
+        <androidx.appcompat.widget.AppCompatCheckBox
+            style="@style/default_text_style"
+            android:id="@+id/remember"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/call_redirection_dialog_remember"
+            android:textSize="14sp"
+            app:buttonTint="?attr/color_main1_500" />
+
+        <LinearLayout
+            android:id="@+id/buttons"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:gravity="end"
+            android:orientation="horizontal">
+
+            <androidx.appcompat.widget.AppCompatTextView
+                style="@style/secondary_dialog_button_label_style"
+                android:id="@+id/call_with_sim"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/call_redirection_dialog_sim_button" />
+
+            <androidx.appcompat.widget.AppCompatTextView
+                style="@style/primary_dialog_button_label_style"
+                android:id="@+id/call_with_app"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="15dp"
+                android:text="@string/call_redirection_dialog_app_button" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/calling"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <com.google.android.material.progressindicator.CircularProgressIndicator
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:indeterminate="true"
+                app:indicatorSize="24dp"
+                app:indicatorColor="?attr/color_main1_500" />
+
+            <androidx.appcompat.widget.AppCompatTextView
+                style="@style/default_text_style"
+                android:id="@+id/calling_label"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="10dp"
+                android:textSize="14sp" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

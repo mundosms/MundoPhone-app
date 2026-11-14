@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MundoPhone: una fila de Ajustes › «Permisos de MundoPhone»: icono, qué es, para qué y si está concedido -->
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <data>
+        <import type="android.view.View" />
+        <variable
+            name="icon"
+            type="android.graphics.drawable.Drawable" />
+        <variable
+            name="title"
+            type="String" />
+        <variable
+            name="description"
+            type="String" />
+        <variable
+            name="granted"
+            type="Boolean" />
+        <variable
+            name="clickListener"
+            type="View.OnClickListener" />
+    </data>
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:onClick="@{clickListener}"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="16dp"
+        android:foreground="?android:attr/selectableItemBackground"
+        android:background="@drawable/shape_squircle_white_background">
+
+        <ImageView
+            android:id="@+id/permission_icon"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="10dp"
+            android:background="@drawable/circle_light_blue_button_background"
+            android:src="@{icon}"
+            android:contentDescription="@null"
+            app:tint="?attr/color_main2_500"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent" />
+
+        <androidx.appcompat.widget.AppCompatTextView
+            style="@style/default_text_style_700"
+            android:id="@+id/permission_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="8dp"
+            android:text="@{title}"
+            android:textSize="16sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            app:layout_constraintVertical_chainStyle="packed"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toTopOf="@id/permission_description"
+            app:layout_constraintStart_toEndOf="@id/permission_icon"
+            app:layout_constraintEnd_toStartOf="@id/status_granted" />
+
+        <androidx.appcompat.widget.AppCompatTextView
+            style="@style/default_text_style"
+            android:id="@+id/permission_description"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="4dp"
+            android:layout_marginEnd="8dp"
+            android:text="@{description}"
+            android:textSize="14sp"
+            android:textColor="?attr/color_main2_600"
+            app:layout_constraintTop_toBottomOf="@id/permission_title"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toEndOf="@id/permission_icon"
+            app:layout_constraintEnd_toStartOf="@id/status_granted" />
+
+        <!-- Círculo verde con el visto si está concedido, rojo con la equis si no -->
+        <ImageView
+            android:id="@+id/status_granted"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:padding="6dp"
+            android:src="@drawable/check"
+            android:background="@drawable/circle_green_background"
+            android:contentDescription="@null"
+            android:visibility="@{granted ? View.VISIBLE : View.INVISIBLE, default=invisible}"
+            app:tint="?attr/color_success_500"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <ImageView
+            android:id="@+id/status_denied"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:padding="6dp"
+            android:src="@drawable/x"
+            android:background="@drawable/circle_red_background"
+            android:contentDescription="@null"
+            android:visibility="@{granted ? View.GONE : View.VISIBLE}"
+            app:tint="?attr/color_danger_500"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</layout>

@@ -1,0 +1,61 @@
+diff --git a/cmake/ExternalDependencies.cmake b/cmake/ExternalDependencies.cmake
+index 56ec7b1..65359e3 100755
+--- a/cmake/ExternalDependencies.cmake
++++ b/cmake/ExternalDependencies.cmake
+@@ -1367,9 +1367,24 @@ if(BUILD_OPUS)
+ 		else()
+ 			set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
+ 		endif()
+-		if(ANDROID OR IOS OR UWP)
++		# MundoSMS: libopus 1.5.2 en coma flotante también en Android, con Deep PLC y OSCE (sin DRED). Solo actúan si
++		# msopus sube la complejidad del DECODIFICADOR (>=5 Deep PLC, >=6 LACE, >=7 NoLACE).
++		if(IOS OR UWP)
+ 			set(OPUS_FIXED_POINT ON)
+ 		endif()
++		if(NOT OPUS_FIXED_POINT)
++			set(OPUS_DEEP_PLC ON)
++			set(OPUS_OSCE ON)
++		endif()
++		set(OPUS_DRED OFF)
++		if(ANDROID)
++			# El CMake de opus 1.5.2 no compila dnn/arm/arm_dnn_map.c: con detección en tiempo de ejecución sin PRESUME
++			# (su defecto en armv7) el enlace falla con DNN_COMPUTE_*_IMPL. armeabi-v7a lleva NEON desde el NDK r21.
++			# No quitar OPUS_MAY_HAVE_NEON: solo PRESUME rompe celt_neon_intr.c (falta la declaración).
++			set(OPUS_PRESUME_NEON ON)
++		endif()
++		set(CMAKE_C_VISIBILITY_PRESET hidden) # de libmediastreamer2.so solo sale la API pública (OPUS_EXPORT)
++		set(CMAKE_POSITION_INDEPENDENT_CODE ON) # el CMake de Belledonne (1.3.1) lo fijaba en el target
+ 		set(BUILD_SHARED_LIBS ${BUILD_OPUS_SHARED_LIBS})
+ 
+ 		set(CMAKE_POLICY_DEFAULT_CMP0077 NEW) # Prevent project from overriding the options we just set here
+diff --git a/mediastreamer2/src/audiofilters/msopus.c b/mediastreamer2/src/audiofilters/msopus.c
+index e082f07..e0422e9 100644
+--- a/mediastreamer2/src/audiofilters/msopus.c
++++ b/mediastreamer2/src/audiofilters/msopus.c
+@@ -765,6 +765,26 @@ static void ms_opus_dec_preprocess(MSFilter *f) {
+ 	if (error != OPUS_OK) {
+ 		ms_error("Opus decoder creation failed: %s", opus_strerror(error));
+ 	}
++	/* MundoSMS: complejidad del DECODIFICADOR. Con la libopus 1.5.2 con Deep PLC y OSCE (parche 0012) activa Deep PLC (>=5)
++	 * y OSCE LACE/NoLACE (>=6/7): mejor voz con pérdidas y en SILK a 16-24 kbit/s, que es lo que manda rtpengine (banco
++	 * 23/10, bajada Opus+FEC: +0,15 a +0,5 de PESQ; 10 % de pérdida 3,41 -> 3,89). Por defecto vale 0 y no hace nada.
++	 * 10 en general; 5 (solo Deep PLC) en ARM de 32 bits con 1-2 núcleos, igual que el codificador baja la suya.
++	 * MS_OPUS_DEC_COMPLEXITY la fuerza (banco). En una libopus sin redes no cambia nada; en la 1.3.1 devuelve error. */
++	if (d->state) {
++		int complexity = 10;
++		const char *dc = NULL;
++#if defined(__arm__) || defined(_M_ARM)
++		if (ms_factory_get_cpu_count(f->factory) <= 2) complexity = 5;
++#endif
++#ifndef MS2_WINDOWS_UNIVERSAL
++		dc = getenv("MS_OPUS_DEC_COMPLEXITY");
++#endif
++		if (dc) complexity = atoi(dc);
++		{
++			int r = opus_decoder_ctl(d->state, OPUS_SET_COMPLEXITY(complexity));
++			ms_message("Opus decoder complexity set to %d: %s (MundoSMS patch)", complexity, opus_strerror(r));
++		}
++	}
+ 	/* initialise the concealer context : allow concealment for 1400ms
+ 	 * - DTX/CNG packets are sent each 400ms
+ 	 * - concealment goes on for 1400ms so we can loose two consecutive DTX packets and keep doing CNG

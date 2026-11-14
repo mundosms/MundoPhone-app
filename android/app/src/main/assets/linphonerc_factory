@@ -1,0 +1,103 @@
+
+## Start of factory rc
+
+# This file shall not contain path referencing package name, in order to be portable when app is renamed.
+# Paths to resources must be set from LinphoneManager, after creating LinphoneCore.
+
+[net]
+mtu=1300
+force_ice_disablement=0
+
+[rtp]
+accept_any_encryption=1
+# MundoPhone: sin RTCP-XR ni TMMBR (acordado con el borde el 21/10/2026; aligeran el SDP)
+rtcp_xr_enabled=0
+rtcp_fb_tmmbr_enabled=0
+# MundoPhone: buffer de jitter con techo y que encoge rápido (ortp jitterctl.c / extremum.c). Por defecto el
+# objetivo salta al mayor parón visto (hasta 500 ms), lo recuerda 2 periodos de 5 s y baja 20 ms cada 5 s: un parón de
+# ~0,7 s del llamante dejaba 610-750 ms de retraso el resto de la llamada (registros del 21/10/2026). Medido en el borde
+# (1,5 h): el 97,6 % de las llamadas de 3 min no recibe ningún parón de más de 0,25 s, y el operador llega a 0,6 s en
+# ratos malos. Por encima del techo, el parón se oye como un corte corto en vez de quedarse como retraso.
+# min se queda en 40: la FEC de Opus necesita el paquete siguiente dentro del buffer (msopus.c).
+jitter_buffer_min_size=40
+jitter_buffer_max_size=300
+jitter_buffer_refresh_period=2500
+jitter_buffer_ramp_refresh_period=1000
+jitter_buffer_ramp_step=20
+# MundoPhone: algoritmo «basic» en vez de «rls» (el de fábrica). El RLS estima la pendiente entre relojes y un parón de
+# red de ~0,75 s le hace creer que el reloj del otro lado va al 0,86 (registro del A52s del 22/10): los paquetes se
+# programan más tarde y el colchón retiene 0,5 s durante el primer minuto. Medido con el tiempo de residencia en el
+# colchón (banco de pruebas, 4 pasadas): tras un parón de 750 ms, rls 384-416 ms de pico y
+# 214 ms a los 15 s; basic 134 ms de pico y 55 ms a los 15 s; con 1,5 s, rls 577-671 → 276-309 y basic 300 → 54. Sin
+# parón basic añade ~10 ms (54 frente a 44). La calidad (PESQ) es la misma.
+jitter_buffer_algorithm=basic
+
+[sip]
+# MundoPhone: reintento del REGISTER fallido a 2, 4, 8, 16, 32 y luego cada 60 s (±25 %, belle-sip refresher.c). Sin esto
+# era a 60 s fijos (±25 %) tras el primero, y una conexión rota tras un push dejaba la cuenta 45-75 s sin registrar
+# (medido en un Samsung A52s).
+register_retry_base_delay_ms=2000
+register_retry_max_delay_ms=60000
+guess_hostname=1
+register_only_when_network_is_up=1
+auto_net_state_mon=1
+auto_answer_replacing_calls=1
+ping_with_options=0
+use_cpim=0
+zrtp_key_agreements_suites=MS_ZRTP_KEY_AGREEMENT_K255_MLK512,MS_ZRTP_KEY_AGREEMENT_K255_KYB512
+chat_messages_aggregation_delay=1000
+chat_messages_aggregation=1
+update_presence_model_timestamp_before_publish_expires_refresh=1
+
+[sound]
+#remove this property for any application that is not Linphone public version itself
+ec_calibrator_cool_tones=1
+disable_ringing=0
+
+[audio]
+android_disable_audio_focus_requests=1
+android_monitor_audio_devices=0
+
+[video]
+displaytype=MSAndroidTextureDisplay
+auto_resize_preview_to_keep_ratio=1
+max_conference_size=vga
+
+[misc]
+enable_basic_to_client_group_chat_room_migration=0
+enable_simple_group_chat_message_state=0
+aggregate_imdn=1
+notify_each_friend_individually_when_presence_received=0
+store_friends=0
+
+[app]
+record_aware=1
+# MundoPhone: nuestros dominios admiten push. Upstream solo trae sip.linphone.org, y con eso se esconden los ajustes de
+# push de nuestras cuentas y disablePushNotificationsFromThirdPartySipAccounts (migración de la 6.0.4) les quitaría el
+# push. Ver MundoPhoneMigrations.upstreamConfigVersion.
+push_notification_domains=push.mundosms.es,voip.mundosms.es
+
+[lime]
+lime_update_threshold=86400
+
+[alerts]
+alerts_enabled=1
+
+[ui]
+# MundoPhone: la paleta de la marca (Theme.LinphoneMundoSMS, azul #437EBD)
+theme_main_color=mundosms
+# MundoPhone: el alta no ofrece «Tengo una cuenta SIP de terceros» (CorePreferences lo lee)
+assistant_hide_third_party_account=1
+# MundoPhone: de una dirección SIP se enseña solo la extensión, nunca sip:, @dominio ni ;transport=
+only_display_sip_uri_username=1
+# MundoPhone: sin «Reuniones» (MundoSMS no tiene servidor de conferencias)
+disable_meetings_feature=1
+
+[proxy_default_values]
+force_register_on_push=1
+reg_expires=2678400
+reg_sendregister=1
+remote_push_notification_allowed=0
+push_notification_allowed=1
+
+## End of factory rc

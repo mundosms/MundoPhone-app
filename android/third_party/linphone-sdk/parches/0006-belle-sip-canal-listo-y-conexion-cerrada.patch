@@ -1,0 +1,58 @@
+diff --git a/belle-sip/src/channel.c b/belle-sip/src/channel.c
+index 4c75d2d..593ab9e 100644
+--- a/belle-sip/src/channel.c
++++ b/belle-sip/src/channel.c
+@@ -1595,6 +1595,11 @@ void belle_sip_channel_set_ready(belle_sip_channel_t *obj, const struct sockaddr
+ 			belle_sip_message("Channel has local address %s:%s", name, serv);
+ 		}
+ 	}
++	/* MundoSMS: last_recv_time valía 0 hasta el primer byte recibido, así que un canal recién conectado parecía llevar
++	 * siglos sin recibir y la limpieza de canales que hace cada push (belle_sip_listening_point_clean_unreliable_channels)
++	 * lo cerraba: con un push duplicado justo tras el REGISTER se perdía la conexión y hacía falta otro REGISTER y otro 401
++	 * (+0,5 s, registros del A52s del 21/10/2026). Se cuenta desde que el canal queda listo. */
++	obj->last_recv_time = belle_sip_time_ms();
+ 	channel_set_state(obj, BELLE_SIP_CHANNEL_READY);
+ 	channel_process_queue(obj);
+ }
+diff --git a/belle-sip/src/transports/stream_channel.c b/belle-sip/src/transports/stream_channel.c
+index 5e01d93..a291b92 100644
+--- a/belle-sip/src/transports/stream_channel.c
++++ b/belle-sip/src/transports/stream_channel.c
+@@ -27,6 +27,17 @@ static void set_tcp_nodelay(belle_sip_socket_t sock) {
+ 	if (err == -1) {
+ 		belle_sip_warning("Fail to set TCP_NODELAY: %s.", belle_sip_get_socket_error_string());
+ 	}
++#if defined(__linux__) && defined(TCP_USER_TIMEOUT)
++	/* MundoSMS: sin esto, si el camino se queda en un agujero negro (NAT caído sin RST) lo enviado se reintenta durante
++	 * minutos y el canal solo se da por malo a los 60 s sin recibir nada. Con 15 s sin ACK el núcleo aborta la conexión y
++	 * belle-sip reconecta. */
++	{
++		unsigned int user_timeout_ms = 15000;
++		if (setsockopt(sock, IPPROTO_TCP, TCP_USER_TIMEOUT, &user_timeout_ms, sizeof(user_timeout_ms)) == -1) {
++			belle_sip_warning("Fail to set TCP_USER_TIMEOUT: %s.", belle_sip_get_socket_error_string());
++		}
++	}
++#endif
+ }
+ 
+ /*************TCP********/
+@@ -246,6 +257,19 @@ BELLE_SIP_INSTANCIATE_CUSTOM_VPTR_BEGIN(belle_sip_stream_channel_t){
+ 			}
+ #endif
+ 			set_tcp_nodelay(sock);
++#if defined(__linux__)
++			/* MundoSMS: si el proceso estuvo congelado mientras conectaba (Android tras un push), el otro lado puede haber
++			 * cerrado ya la conexión vacía: el connect se completa con el FIN en cola y escribir el REGISTER ahí se pierde
++			 * (el borde vio conexiones de 22-26 s sin datos). Si hay algo que leer al completar, se mira sin consumirlo. */
++			if (revents & BELLE_SIP_EVENT_READ) {
++				char peek_byte;
++				ssize_t r = recv(sock, &peek_byte, 1, MSG_PEEK | MSG_DONTWAIT);
++				if (r == 0 || (r < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
++					belle_sip_error("channel [%p]: connection already closed by peer when completed (MundoSMS patch)", obj);
++					return -1;
++				}
++			}
++#endif
+ 			return 0;
+ 		} else {
+ 			belle_sip_error("Connection failed  for fd [%i]: cause [%s]", sock,

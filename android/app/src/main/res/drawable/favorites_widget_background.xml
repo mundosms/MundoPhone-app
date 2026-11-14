@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MundoPhone (E4): fondo del widget de favoritos (en Android 12+ el sistema además lo recorta a su radio) -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/favorites_widget_background" />
+    <corners android:radius="20dp" />
+</shape>

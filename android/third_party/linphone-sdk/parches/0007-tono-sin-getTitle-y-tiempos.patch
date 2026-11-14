@@ -1,0 +1,30 @@
+diff --git a/liblinphone/wrappers/java/classes/org/linphone/core/tools/audio/AudioHelper.java b/liblinphone/wrappers/java/classes/org/linphone/core/tools/audio/AudioHelper.java
+index c969532..1c59a8f 100644
+--- a/liblinphone/wrappers/java/classes/org/linphone/core/tools/audio/AudioHelper.java
++++ b/liblinphone/wrappers/java/classes/org/linphone/core/tools/audio/AudioHelper.java
+@@ -160,7 +160,10 @@ public class AudioHelper implements OnAudioFocusChangeListener {
+         if (ringtone == null || ringtone.isEmpty()) {
+             Log.i("[Audio Helper] Core ringtone path is null, using device ringtone if possible");
+ 
++            // MundoSMS: tiempos de cada paso del tono (96-219 ms en el hilo del Core antes de que suene, registros del A52s)
++            long t0 = android.os.SystemClock.elapsedRealtime();
+             Uri defaultRingtoneUri = getDefaultRingtoneUri(context);
++            long tUri = android.os.SystemClock.elapsedRealtime();
+             if (defaultRingtoneUri == null) {
+                 Log.w("[Audio Helper] Couldn't get ringtone URI through RingtoneManager, trying with Settings.System.DEFAULT_RINGTONE_URI");
+                 ringtone = Settings.System.DEFAULT_RINGTONE_URI.toString();
+@@ -168,9 +171,13 @@ public class AudioHelper implements OnAudioFocusChangeListener {
+             } else {
+                 try {
+                     mRingtone = RingtoneManager.getRingtone(context, defaultRingtoneUri);
++                    long tRingtone = android.os.SystemClock.elapsedRealtime();
+                     if (mRingtone != null) {
+-                        Log.i("[Audio Helper] Start playing ringone [" + mRingtone.getTitle(context) + "]");
++                        // MundoSMS: sin getTitle(), que es otra consulta a MediaStore solo para este log
++                        Log.i("[Audio Helper] Start playing ringtone [" + defaultRingtoneUri + "]");
+                         DeviceUtils.playRingtone(mRingtone, audioAttrs);
++                        Log.i("[Audio Helper] Ringtone timings (MundoSMS patch): uri [" + (tUri - t0) + "] ms, getRingtone ["
++                                + (tRingtone - tUri) + "] ms, play [" + (android.os.SystemClock.elapsedRealtime() - tRingtone) + "] ms");
+                     } else {
+                         Log.e("[Audio Helper] Couldn't retrieve Ringtone object from manager!");
+                     }

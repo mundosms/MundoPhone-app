@@ -1,0 +1,16 @@
+diff --git a/belle-sip/src/channel.c b/belle-sip/src/channel.c
+index 3761116..4c75d2d 100644
+--- a/belle-sip/src/channel.c
++++ b/belle-sip/src/channel.c
+@@ -1362,6 +1362,11 @@ static void check_content_length(belle_sip_message_t *msg, size_t body_len) {
+ 			belle_sip_error("message [%p] has Content-Length [" FORMAT_SIZE_T
+ 			                "], but without body or body with undetermined size. Fix your app.",
+ 			                msg, value);
++		} else if (ctlen == NULL && belle_sip_message_get_body_handler(msg) == NULL) {
++			/* No body at all and no Content-Length: belle_sip_message_set_body(msg, NULL, 0) removes the header, e.g. on
++			 * the PUBLISH that withdraws presence (Expires: 0). RFC 3261 20.14 requires it on stream transports, and some
++			 * servers reject or wait on such a request over TCP. An undetermined-size body keeps its handler: untouched. */
++			belle_sip_message_add_header(msg, (belle_sip_header_t *)belle_sip_header_content_length_create(0));
+ 		}
+ 	}
+ }

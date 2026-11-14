@@ -1,0 +1,75 @@
+diff --git a/belle-sip/src/refresher.c b/belle-sip/src/refresher.c
+index 75075fb..d648a94 100644
+--- a/belle-sip/src/refresher.c
++++ b/belle-sip/src/refresher.c
+@@ -135,6 +135,25 @@ static void retry_later(belle_sip_refresher_t *refresher) {
+ 	}
+ }
+ 
++/* MundoSMS: ante un rechazo EXPLÍCITO del servidor (403, 5xx sin Retry-After, autenticación que falla siempre, otros
++ * errores) se reintenta con el retardo de siempre (retry_after, 60 s ±25 %), también con la espera creciente activada:
++ * la escalera rápida (2, 4, 8… s) es para los fallos de transporte (io error, conexión caída), no para martillear a un
++ * servidor que ha dicho que no (petición del borde, 23/10/2026). */
++static void retry_later_after_rejection(belle_sip_refresher_t *refresher) {
++	if (!register_retry_backoff_enabled(refresher)) {
++		retry_later(refresher);
++		return;
++	}
++	if (refresher->timer && refresher->timer_purpose == RETRY) {
++		belle_sip_message("Refresher[%p]: retry timer already scheduled, keeping it", refresher);
++		return;
++	}
++	refresher->number_of_retry++;
++	belle_sip_message("Refresher[%p]: explicit rejection, retrying in %i ms (MundoSMS patch)", refresher,
++	                  refresher->retry_after);
++	schedule_timer_at(refresher, refresher->retry_after, RETRY);
++}
++
+ static void retry_later_on_io_error(belle_sip_refresher_t *refresher) {
+ 	/* With the REGISTER backoff active, a 503 handler has typically just booked a retry
+ 	 * before the channel teardown reports this io error; rescheduling here would double-increment
+@@ -431,7 +450,7 @@ static void process_response_event(belle_sip_listener_t *user_ctx, const belle_s
+ 					/*avoid looping with 407 or 401 */
+ 					belle_sip_warning("Authentication is failing constantly, %s",
+ 					                  (refresher->target_expires > 0) ? "will retry later" : "giving up.");
+-					if (refresher->target_expires > 0) retry_later(refresher);
++					if (refresher->target_expires > 0) retry_later_after_rejection(refresher);
+ 					refresher->auth_failures = 0; /*reset auth failure*/
+ 					break;
+ 				}
+@@ -445,7 +464,7 @@ static void process_response_event(belle_sip_listener_t *user_ctx, const belle_s
+ 				break;      /*Else notify user of registration failure*/
+ 			case 403:
+ 				/*In case of 403, we will retry later, just in case*/
+-				if (refresher->target_expires > 0) retry_later(refresher);
++				if (refresher->target_expires > 0) retry_later_after_rejection(refresher);
+ 				else will_retry = FALSE;
+ 				break;
+ 			case 412:
+@@ -458,7 +477,7 @@ static void process_response_event(belle_sip_listener_t *user_ctx, const belle_s
+ 						will_retry = FALSE;
+ 					}
+ 				} else {
+-					if (refresher->target_expires > 0) retry_later(refresher);
++					if (refresher->target_expires > 0) retry_later_after_rejection(refresher);
+ 					else will_retry = FALSE;
+ 				}
+ 				break;
+@@ -522,7 +541,7 @@ static void process_response_event(belle_sip_listener_t *user_ctx, const belle_s
+ 					if (refresher->dialog) retry_later_on_io_error(refresher);
+ 					else {
+ 						if (!retry_after_header && register_retry_backoff_enabled(refresher)) {
+-							retry_later(refresher);
++							retry_later_after_rejection(refresher);
+ 						} else {
+ 							schedule_timer_at(refresher, retry_after_time_ms, RETRY);
+ 						}
+@@ -531,7 +550,7 @@ static void process_response_event(belle_sip_listener_t *user_ctx, const belle_s
+ 				break;
+ 			default:
+ 				/*for all other errors <600, retry later*/
+-				if (response_code < 600 && refresher->target_expires > 0) retry_later(refresher);
++				if (response_code < 600 && refresher->target_expires > 0) retry_later_after_rejection(refresher);
+ 				else will_retry = FALSE;
+ 				break;
+ 		}

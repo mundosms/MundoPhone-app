@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- edit_text_background para campos de varias líneas (formulario de «Compartir registros») -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true"
+        android:drawable="@drawable/shape_edit_text_multiline_focused_background" />
+    <item android:state_enabled="false"
+        android:drawable="@drawable/shape_edit_text_multiline_disabled_background" />
+    <item
+        android:drawable="@drawable/shape_edit_text_multiline_background" />
+</selector>

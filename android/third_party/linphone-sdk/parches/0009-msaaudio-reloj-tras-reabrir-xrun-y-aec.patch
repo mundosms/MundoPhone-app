@@ -1,0 +1,87 @@
+diff --git a/msaaudio/msaaudio_player.cpp b/msaaudio/msaaudio_player.cpp
+index 050fc75..1c7589f 100644
+--- a/msaaudio/msaaudio_player.cpp
++++ b/msaaudio/msaaudio_player.cpp
+@@ -330,6 +330,9 @@ static void _aaudio_player_init(AAudioOutputContext *octx) {
+ 	}
+ 
+ 	octx->framesPerBurst = AAudioStream_getFramesPerBurst(stream);
++	/* MundoSMS: el contador de cortes (xrun) es de cada flujo y empieza en 0; sin esto, tras reabrir se comparaba con el
++	 * del flujo anterior y el ajuste del buffer dejaba de reaccionar (cada corte es un clic). */
++	octx->prevXRunCount = 0;
+ 	// Set the buffer size to the burst size - this will give us the minimum possible latency
+ 	AAudioStream_setBufferSizeInFrames(stream, octx->framesPerBurst * octx->aaudio_context->nchannels * 2);
+ 	octx->samplesPerFrame = AAudioStream_getSamplesPerFrame(stream);
+diff --git a/msaaudio/msaaudio_recorder.cpp b/msaaudio/msaaudio_recorder.cpp
+index a161ada..7e464af 100644
+--- a/msaaudio/msaaudio_recorder.cpp
++++ b/msaaudio/msaaudio_recorder.cpp
+@@ -72,6 +72,10 @@ struct AAudioInputContext {
+ 	bool bluetoothScoStarted = false;
+ 	bool streamRunning = false;
+ 	MSTask *task = nullptr;
++	/* MundoSMS: resincronizar el reloj cuando el flujo reabierto entregue sus primeras muestras (ver
++	 * aaudio_recorder_restart) */
++	bool resyncPending = false;
++	int64_t samplesAtRestart = 0;
+ };
+ 
+ static AAudioInputContext* aaudio_input_context_init(MSFilter *f) {
+@@ -284,6 +288,13 @@ static bool_t aaudio_recorder_quick_close(MSFilter *obj) {
+ 		// Wait a bit (10 ms) to prevent a callback from being dispatched after stop
+ 		ms_usleep(10000);
+ 
++		/* MundoSMS: el AEC por hardware va atado a la sesión de AAudio; si no se libera aquí, el flujo nuevo (otra
++		 * sesión) se quedaba con «Using already existing … echo canceller object» de la vieja. */
++		if (ictx->aec) {
++			ms_android_sound_utils_release_hardware_echo_canceller(ictx->sound_utils, ictx->aec);
++			ictx->aec = NULL;
++			ms_message("[AAudio Recorder] Hardware echo canceller of the previous session released (MundoSMS patch)");
++		}
+ 		result = AAudioStream_close(ictx->stream);
+ 		if (result != AAUDIO_OK) {
+ 			ms_error("[AAudio Recorder] Recorder stream close failed: %i / %s", result, AAudio_convertResultToText(result));
+@@ -302,6 +313,14 @@ static bool_t aaudio_recorder_restart(MSFilter *obj) {
+ 
+ 	ms_message("[AAudio Recorder] Restarting stream due to device ID that has changed");
+ 	aaudio_recorder_quick_close(obj);
++	/* MundoSMS: el reloj del motor de audio se resincroniza cuando el flujo nuevo entrega sus primeras muestras. Antes
++	 * se hacía al detectar el cambio, ANTES de abrir el flujo: los 0,3-0,8 s de openStream se medían como desfase y el
++	 * motor de audio se quedaba atrasado ese tiempo el resto de la llamada (hasta 1-2,5 s tras varios cambios,
++	 * registros del A52s del 21/10/2026). Si el flujo se desconectaba solo, ni siquiera se resincronizaba. */
++	ms_mutex_lock(&ictx->mutex);
++	ictx->samplesAtRestart = ictx->read_samples;
++	ictx->resyncPending = true;
++	ms_mutex_unlock(&ictx->mutex);
+ 	aaudio_recorder_init(obj);
+ 	ms_message("[AAudio Recorder] Stream was restarted");
+ 
+@@ -344,13 +363,7 @@ static void android_snd_read_process(MSFilter *obj) {
+ 	if (ictx->aaudio_context->device_changed) {
+ 		ms_warning("[AAudio Recorder] Device ID changed to %0d", ictx->deviceId);
+ 		ms_worker_thread_add_task(ictx->process_thread, (MSTaskFunc)aaudio_recorder_restart, obj);
+-		
+-		ms_mutex_lock(&ictx->mutex);
+-		if (ictx->mTickerSynchronizer){
+-			ms_ticker_synchronizer_resync(ictx->mTickerSynchronizer);
+-			ms_message("[AAudio Recorder] resync ticker synchronizer to avoid audio delay");
+-		}
+-		ms_mutex_unlock(&ictx->mutex);
++		/* MundoSMS: la resincronización se aplaza a cuando el flujo nuevo entregue muestras (ver aaudio_recorder_restart) */
+ 		ictx->aaudio_context->device_changed = false;
+ 	} else if (ictx->streamRunning && ictx->stream) {
+ 		aaudio_stream_state_t streamState = AAudioStream_getState(ictx->stream);
+@@ -370,6 +383,13 @@ static void android_snd_read_process(MSFilter *obj) {
+ 	while ((m = getq(&ictx->q)) != nullptr) {
+ 		ms_queue_put(obj->outputs[0], m);
+ 	}
++	if (ictx->resyncPending && ictx->read_samples > ictx->samplesAtRestart) {
++		ictx->resyncPending = false;
++		if (ictx->mTickerSynchronizer) {
++			ms_ticker_synchronizer_resync(ictx->mTickerSynchronizer);
++			ms_message("[AAudio Recorder] New stream delivering samples, ticker synchronizer resynced (MundoSMS patch)");
++		}
++	}
+ 	if (ictx->mTickerSynchronizer) {
+ 		ictx->mAvSkew = ms_ticker_synchronizer_update(ictx->mTickerSynchronizer, ictx->read_samples, (unsigned int)ictx->sample_rate);
+ 	}

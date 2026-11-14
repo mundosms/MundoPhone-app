@@ -1,0 +1,68 @@
+## Start of default rc
+
+[sip]
+contact="MundoPhone Android" <sip:mundophone.android@unknown-host>
+use_ipv6=0
+keepalive_period=30000
+sip_port=-1
+sip_tcp_port=-1
+sip_tls_port=-1
+media_encryption=none
+update_presence_model_timestamp_before_publish_expires_refresh=1
+use_rfc2833=1
+use_info=1
+
+[net]
+#Because dynamic bitrate adaption can increase bitrate, we must allow "no limit"
+download_bw=0
+upload_bw=0
+
+[video]
+size=vga
+automatically_accept=0
+automatically_initiate=0
+automatically_accept_direction=2 #receive only
+
+[app]
+tunnel=disabled
+auto_download_incoming_voice_recordings=1
+auto_download_incoming_icalendars=1
+debug=0
+
+[tunnel]
+host=
+port=443
+
+[misc]
+# MundoPhone: nada va a Belledonne (D7). Los registros, a nuestro servidor de soporte (la app le añade el informe del
+# usuario al enviar); sin servidor de adjuntos hasta tener uno propio (D5); sin comprobador de versiones (lo hace Play).
+log_collection_upload_server_url=https://mundophonedebug.mundosms.es/upload
+file_transfer_server_url=
+version_check_url_root=
+max_calls=10
+history_max_size=100
+conference_layout=1
+hide_empty_chat_rooms=1
+
+[fec]
+fec_enabled=1
+
+[magic_search]
+return_empty_friends=1
+
+[chat]
+imdn_to_everybody_threshold=1
+
+[ui]
+# MundoPhone: vacío = todos los contactos. En la 6.2 un dominio aquí deja solo los contactos SIP de ese dominio y
+# esconde los de teléfono; Contactos frente a Equipo se decide al portar A5/A7.
+contacts_filter=
+
+[proxy_default_values]
+force_register_on_push=1
+reg_expires=2678400
+reg_sendregister=1
+remote_push_notification_allowed=0
+push_notification_allowed=1
+
+## End of default rc

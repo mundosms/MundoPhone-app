@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MundoPhone (E4): colores del widget de favoritos en modo oscuro (ver values/favorites_widget_colors.xml) -->
+<resources>
+    <color name="favorites_widget_background">@color/background_color_dark_mode</color>
+    <color name="favorites_widget_title">@color/mundosms_main_100</color>
+    <color name="favorites_widget_text">@color/gray_200</color>
+    <color name="favorites_widget_secondary_text">@color/gray_300</color>
+    <color name="favorites_widget_avatar_background">@color/mundosms_main_500</color>
+    <color name="favorites_widget_avatar_text">@color/bc_white</color>
+</resources>

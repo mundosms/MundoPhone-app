@@ -1,0 +1,193 @@
+diff --git a/msaaudio/msaaudio.cpp b/msaaudio/msaaudio.cpp
+index e21513f..da3e65c 100644
+--- a/msaaudio/msaaudio.cpp
++++ b/msaaudio/msaaudio.cpp
+@@ -221,6 +221,7 @@ MS_PLUGIN_DECLARE(void) libmsaaudio_init(MSFactory* factory) {
+ 	register_aaudio_recorder(factory);
+ 
+ 	ms_message("[AAudio] libmsaaudio plugin loaded");
++	ms_message("[AAudio] Player restart with backoff and recovery on device change (MundoSMS patch, based on 5.5.35)");
+ 
+ 	const bool loadOk = loadLib();
+ 
+diff --git a/msaaudio/msaaudio_player.cpp b/msaaudio/msaaudio_player.cpp
+index 8abc3ee..050fc75 100644
+--- a/msaaudio/msaaudio_player.cpp
++++ b/msaaudio/msaaudio_player.cpp
+@@ -17,6 +17,7 @@
+  * along with this program. If not, see <http://www.gnu.org/licenses/>.
+  */
+ 
++#include <atomic>
+ #include <string.h>
+ 
+ #include <mediastreamer2/android_utils.h>
+@@ -32,7 +33,13 @@
+ static const int flowControlIntervalMs = 5000;
+ static const int flowControlThresholdMs = 40;
+ 
+-static const int maxRetriesWhenPlayerStreamFails = 2;
++// Starting the player right after a route change can fail with AAUDIO_ERROR_DISCONNECTED while Android is still
++// switching the communication device (seen on Samsung when going to speaker). Retrying immediately fails the same
++// way, so retry with a growing delay (100, 200, 400, 800, 1000, 1000 ms) instead of immediate attempts, and if it
++// still fails, try again on the next output device change instead of leaving the filter without a stream for good.
++static const int maxRestartAttempts = 6;
++static const int restartBackoffBaseMs = 100;
++static const int restartBackoffMaxMs = 1000;
+ 
+ static void aaudio_player_callback_error(AAudioStream *stream, void *userData, aaudio_result_t error);
+ 
+@@ -173,6 +180,8 @@ struct AAudioOutputContext {
+ 	bool adjustingBufferSize = false;
+ 	bool restartScheduled = false;
+ 	int restartAttemptsCount = 0;
++	bool restartAborted = false; // Every restart attempt failed: the next output device change will try again
++	std::atomic<bool> stopped{false}; // Set by postprocess: pending (delayed) restarts must not open a stream any more
+ };
+ 
+ static void android_snd_write_init(MSFilter *obj){
+@@ -255,7 +264,7 @@ static aaudio_data_callback_result_t aaudio_player_callback(AAudioStream *stream
+ 	return AAUDIO_CALLBACK_RESULT_CONTINUE;	
+ }
+ 
+-static bool_t aaudio_player_init(AAudioOutputContext *octx);
++static bool_t aaudio_player_restart(AAudioOutputContext *octx);
+ 
+ static void _aaudio_player_init(AAudioOutputContext *octx) {
+ 	AAudioStreamBuilder *builder;
+@@ -330,7 +339,6 @@ static void _aaudio_player_init(AAudioOutputContext *octx) {
+ 	octx->bufferSize = AAudioStream_getBufferSizeInFrames(stream);
+ 
+ 	result = AAudioStream_requestStart(stream);
+-	bool restartStream = false;
+ 
+ 	if (result != AAUDIO_OK) {
+ 		ms_error("[AAudio Player] Start stream for player failed: %s (%i)", AAudio_convertResultToText(result), result);
+@@ -342,26 +350,15 @@ static void _aaudio_player_init(AAudioOutputContext *octx) {
+ 			ms_message("[AAudio Player] Player stream closed");
+ 		}
+ 		stream = nullptr;
+-
+-		if (disconnected) {
+-			if (octx->restartAttemptsCount > maxRetriesWhenPlayerStreamFails) {
+-				ms_error("[AAudio Player] Tried [%i] times to start the stream without success, not trying again", octx->restartAttemptsCount);
+-			} else {
+-				ms_warning("[AAudio Player] Player stream wasn't started, trying again");
+-				restartStream = true;
+-				octx->restartAttemptsCount += 1;
+-			}
+-		}
++		// Retries are decided by the callers (aaudio_player_init / aaudio_player_restart), with a growing delay: when this
++		// scheduled its own immediate retry, a failed restart got two retries in parallel, both failing the same way.
++		if (disconnected) ms_warning("[AAudio Player] Player stream wasn't started (device disconnected)");
+ 	} else {
+ 		ms_message("[AAudio Player] Player stream started");
+ 	}
+ 
+ 	AAudioStreamBuilder_delete(builder);
+ 	if (stream == nullptr) {
+-		if (restartStream) {
+-			ms_message("[AAudio Player] Scheduling player stream re-initialization");
+-			ms_worker_thread_add_task(octx->process_thread, (MSTaskFunc)aaudio_player_init, octx);
+-		}
+ 		return;
+ 	}
+ 
+@@ -394,7 +391,17 @@ static void _aaudio_player_init(AAudioOutputContext *octx) {
+ }
+ 
+ static bool_t aaudio_player_init(AAudioOutputContext *octx) {
++	if (octx->stopped) return TRUE;
+ 	_aaudio_player_init(octx);
++
++	if (octx->stream == nullptr && !octx->stopped) {
++		// The first start can fail for the same reason as a restart: retry it the same way
++		ms_error("[AAudio Player] Failed to start the stream, trying again");
++		ms_mutex_lock(&octx->stream_mutex);
++		octx->restartAttemptsCount = 1;
++		ms_mutex_unlock(&octx->stream_mutex);
++		ms_worker_thread_add_task(octx->process_thread, (MSTaskFunc)aaudio_player_restart, octx);
++	}
+ 	return TRUE;
+ }
+ 
+@@ -426,20 +433,37 @@ static bool_t aaudio_player_close(AAudioOutputContext *octx) {
+ }
+ 
+ static bool_t aaudio_player_restart(AAudioOutputContext *octx) {
++	if (octx->stopped) {
++		ms_message("[AAudio Player] Filter has been stopped, not restarting stream");
++		return TRUE;
++	}
++	if (octx->restartAttemptsCount > 0) {
++		int delayMs = restartBackoffBaseMs << (octx->restartAttemptsCount - 1);
++		if (delayMs > restartBackoffMaxMs) delayMs = restartBackoffMaxMs;
++		ms_message("[AAudio Player] Waiting [%i] ms before restart attempt [%i]", delayMs, octx->restartAttemptsCount + 1);
++		ms_usleep(delayMs * 1000);
++		if (octx->stopped) {
++			ms_message("[AAudio Player] Filter has been stopped while waiting, not restarting stream");
++			return TRUE;
++		}
++	}
++
+ 	ms_message("[AAudio Player] Restarting stream");
+ 	aaudio_player_close(octx);
+ 	_aaudio_player_init(octx);
+ 
+ 	if (octx->stream != nullptr) {
+ 		ms_message("[AAudio Player] Stream was restarted");
+-
+-		if (octx->restartScheduled) {
+-			ms_mutex_lock(&octx->stream_mutex);
+-			octx->restartScheduled = false;
+-			ms_mutex_unlock(&octx->stream_mutex);
+-		}
+-	} else if (octx->restartAttemptsCount > maxRetriesWhenPlayerStreamFails) {
+-		ms_error("[AAudio Player] Tried [%i] times to restart the stream without success, aborting restart", octx->restartAttemptsCount);
++		ms_mutex_lock(&octx->stream_mutex);
++		octx->restartScheduled = false;
++		octx->restartAborted = false;
++		ms_mutex_unlock(&octx->stream_mutex);
++	} else if (octx->restartAttemptsCount >= maxRestartAttempts) {
++		ms_error("[AAudio Player] Tried [%i] times to restart the stream without success, aborting restart until next output device change", octx->restartAttemptsCount + 1);
++		ms_mutex_lock(&octx->stream_mutex);
++		octx->restartScheduled = false;
++		octx->restartAborted = true;
++		ms_mutex_unlock(&octx->stream_mutex);
+ 	} else {
+ 		ms_error("[AAudio Player] Failed to restart the stream, trying again");
+ 		ms_mutex_lock(&octx->stream_mutex);
+@@ -474,7 +498,10 @@ static void anroid_snd_write_require_volume_hack_depending_on_stream(AAudioOutpu
+ 
+ static void android_snd_write_preprocess(MSFilter *obj) {
+ 	AAudioOutputContext *octx = (AAudioOutputContext*)obj->data;
+-	
++	octx->stopped = false;
++	octx->restartAborted = false;
++	octx->restartAttemptsCount = 0;
++
+ 	if (octx->soundCard) {
+ 		if (ms_snd_card_get_device_type(octx->soundCard) == MSSndCardDeviceType::MS_SND_CARD_DEVICE_TYPE_BLUETOOTH ||
+ 			ms_snd_card_get_device_type(octx->soundCard) == MSSndCardDeviceType::MS_SND_CARD_DEVICE_TYPE_HEARING_AID)
+@@ -574,6 +601,7 @@ static void android_snd_write_process(MSFilter *obj) {
+ static void android_snd_write_postprocess(MSFilter *obj) {
+ 	AAudioOutputContext *octx = (AAudioOutputContext*)obj->data;
+ 
++	octx->stopped = true;
+ 	octx->restartScheduled = false;
+ 	octx->adjustingBufferSize = false;
+ 	octx->task = ms_worker_thread_add_waitable_task(octx->process_thread, (MSTaskFunc)aaudio_player_close, octx);
+@@ -622,6 +650,13 @@ static int android_snd_write_set_device_id(MSFilter *obj, void *data) {
+ 			ms_message("[AAudio Player] Requesting the stream to restart to apply new device ID");
+ 			octx->restartAttemptsCount = 0;
+ 			ms_worker_thread_add_task(octx->process_thread, (MSTaskFunc)aaudio_player_restart, octx);
++		} else if (octx->restartAborted && !octx->stopped) {
++			// Without this, a failed switch to the speaker left the call silent until hang-up even if the user changed
++			// the output device again (checkForDeviceChange below is only read while a stream exists)
++			ms_warning("[AAudio Player] No stream because previous restart attempts failed, trying again with the new device ID");
++			octx->restartAttemptsCount = 0;
++			octx->restartAborted = false;
++			ms_worker_thread_add_task(octx->process_thread, (MSTaskFunc)aaudio_player_restart, octx);
+ 		} else {
+ 			ms_warning("[AAudio Player] No stream, will check when stream will be running if device needs to be updated");
+ 			octx->checkForDeviceChange = true;

@@ -1,0 +1,2 @@
+# NOTIFY tal cual salen del borde (CRLF incluidos): que git no los toque
+*.sip -text

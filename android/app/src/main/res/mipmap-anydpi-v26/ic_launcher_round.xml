@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MundoSMS: icono adaptativo con la marca de 2025 (el favicon de la web): símbolo blanco sobre #1B1725. La capa
+     monocroma (iconos temáticos de Android 13+) es el mismo símbolo: el sistema solo usa su alfa y lo tiñe. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background"/>
+    <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+    <monochrome android:drawable="@drawable/ic_launcher_foreground"/>
+</adaptive-icon>

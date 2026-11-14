@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MundoSMS: como squircle_green_button_background, en el lima de la web -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false"
+        android:drawable="@drawable/shape_squircle_accent_disabled_background" />
+    <item android:state_pressed="true"
+        android:drawable="@drawable/shape_squircle_accent_pressed_background" />
+    <item android:state_hovered="true"
+        android:drawable="@drawable/shape_squircle_accent_pressed_background" />
+    <item
+        android:drawable="@drawable/shape_squircle_accent_background" />
+</selector>

@@ -1,0 +1,27 @@
+diff --git a/belle-sip/src/refresher.c b/belle-sip/src/refresher.c
+index afef03f..75075fb 100644
+--- a/belle-sip/src/refresher.c
++++ b/belle-sip/src/refresher.c
+@@ -77,8 +77,8 @@ static void cancel_retry(belle_sip_refresher_t *refresher) {
+ 	}
+ 	refresher->timer_purpose = TIMER_PURPOSE_NONE;
+ }
+-static void schedule_timer_at(belle_sip_refresher_t *refresher, int delay, timer_purpose_t purpose) {
+-	belle_sip_message("Refresher[%p]: scheduling next timer in %i ms for purpose [%s]", refresher, delay,
++static void schedule_timer_at(belle_sip_refresher_t *refresher, int64_t delay, timer_purpose_t purpose) {
++	belle_sip_message("Refresher[%p]: scheduling next timer in %lld ms for purpose [%s]", refresher, (long long)delay,
+ 	                  purpose == NORMAL_REFRESH ? "normal refresh" : (purpose == RETRY ? "retry" : "none"));
+ 	/*cancel timer if any*/
+ 	cancel_retry(refresher);
+@@ -163,7 +163,10 @@ static void schedule_timer(belle_sip_refresher_t *refresher) {
+ 	} else if (min_value == max_value) {
+ 		weight = min_value;
+ 	}
+-	schedule_timer_at(refresher, refresher->obtained_expires * weight, NORMAL_REFRESH);
++	/* In 64 bits: expires * weight overflows an int above ~2386092 s (27.6 days). With the 31 days (2678400 s) a server
++	 * may legitimately grant, the delay became negative (-1884407296 ms) and a negative timeout is never armed, so the
++	 * registration was never refreshed. */
++	schedule_timer_at(refresher, (int64_t)refresher->obtained_expires * weight, NORMAL_REFRESH);
+ }
+ 
+ static void process_dialog_terminated(belle_sip_listener_t *user_ctx,

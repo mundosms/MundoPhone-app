@@ -1,0 +1,205 @@
+diff --git a/liblinphone/wrappers/java/classes/org/linphone/core/tools/AndroidPlatformHelper.java b/liblinphone/wrappers/java/classes/org/linphone/core/tools/AndroidPlatformHelper.java
+index bbf512a..1cedca5 100644
+--- a/liblinphone/wrappers/java/classes/org/linphone/core/tools/AndroidPlatformHelper.java
++++ b/liblinphone/wrappers/java/classes/org/linphone/core/tools/AndroidPlatformHelper.java
+@@ -704,6 +704,27 @@ public class AndroidPlatformHelper {
+     }
+ 
+     private void copyAssetsFromPackage() throws IOException {
++        /* MundoSMS: la copia (gramáticas, rootca.pem, imágenes…) se hacía en CADA arranque, también en el arranque en frío
++         * por push, antes del REGISTER (24-60 ms en el A52s). Solo hace falta al instalar o actualizar la app: se guarda la
++         * fecha de actualización del paquete en un sello y se compara. Si se borran los datos, el sello desaparece. */
++        File stamp = new File(mContext.getFilesDir(), ".mundosms_assets_stamp");
++        String current = null;
++        try {
++            current = String.valueOf(mContext.getPackageManager().getPackageInfo(mContext.getPackageName(), 0).lastUpdateTime);
++            if (stamp.exists()) {
++                java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(stamp));
++                String stored = reader.readLine();
++                reader.close();
++                if (current.equals(stored)) {
++                    Log.i("[Platform Helper] Assets already copied for this app version, skipping (MundoSMS patch)");
++                    return;
++                }
++            }
++        } catch (Exception e) {
++            Log.w("[Platform Helper] Couldn't check assets stamp, copying: ", e);
++            current = null;
++        }
++
+         Log.i("[Platform Helper] Starting copy from assets to application files directory");
+         copyAssetsFromPackage(mContext, "org.linphone.core", ".");
+         Log.i("[Platform Helper] Copy from assets done");
+@@ -711,6 +732,12 @@ public class AndroidPlatformHelper {
+         if (getResourceIdentifierFromName("cpim_grammar") != 0) {
+             copyLegacyAssets();
+         }
++
++        if (current != null) {
++            FileOutputStream out = new FileOutputStream(stamp);
++            out.write(current.getBytes());
++            out.close();
++        }
+     }
+ 
+     private void copyLegacyAssets() throws IOException {
+@@ -1732,6 +1759,24 @@ public class AndroidPlatformHelper {
+         return true;
+     }
+ 
++    /**
++     * MundoSMS: precarga el tono por defecto en segundo plano (llamado en el hilo del Core al llegar un push). Solo si el
++     * Core no tiene un tono propio (mCore.getRing() vacío), que es cuando startRinging usa el del sistema.
++     */
++    public void prepareRingtoneForPush() {
++        if (mAudioHelper == null || mCore == null) return;
++        String ring = mCore.getRing();
++        if (ring != null && !ring.isEmpty()) return;
++        final AudioHelper audioHelper = mAudioHelper;
++        final Context context = mContext;
++        new Thread(new Runnable() {
++            @Override
++            public void run() {
++                audioHelper.prepareRingtone(context);
++            }
++        }, "MundoSMS ringtone prepare").start();
++    }
++
+     public void startRinging(Address remoteAddress) {
+         Runnable ringingRunnable = new Runnable() {
+             @Override
+diff --git a/liblinphone/wrappers/java/classes/org/linphone/core/tools/audio/AudioHelper.java b/liblinphone/wrappers/java/classes/org/linphone/core/tools/audio/AudioHelper.java
+index 1c59a8f..f6a316e 100644
+--- a/liblinphone/wrappers/java/classes/org/linphone/core/tools/audio/AudioHelper.java
++++ b/liblinphone/wrappers/java/classes/org/linphone/core/tools/audio/AudioHelper.java
+@@ -28,6 +28,10 @@ import android.media.AudioManager;
+ import android.media.AudioManager.OnAudioFocusChangeListener;
+ import android.media.MediaPlayer;
+ import android.net.Uri;
++import android.os.Build;
++import android.os.Handler;
++import android.os.Looper;
++import android.os.SystemClock;
+ import android.provider.Settings;
+ 
+ import androidx.media.AudioAttributesCompat;
+@@ -56,6 +60,15 @@ public class AudioHelper implements OnAudioFocusChangeListener {
+     private AudioFocusRequestCompat mCallRequest;
+     private MediaPlayer mPlayer;
+     private Ringtone mRingtone;
++
++    /* MundoSMS: tono precargado al llegar un push (ver prepareRingtone). En Android 12-14 getRingtone() prepara el
++     * MediaPlayer y setAudioAttributes() lo vuelve a preparar: hecho en el hilo del Core justo antes de sonar costaba
++     * 96-219 ms (registros del A52s). Precargado en segundo plano, al entrar la llamada solo queda play(). */
++    private static final long PREPARED_RINGTONE_TTL_MS = 60000;
++    private final Object mPreparedLock = new Object();
++    private Ringtone mPreparedRingtone;
++    private Uri mPreparedUri;
++    private long mPreparedAt;
+     private int mVolumeBeforeEchoTest;
+     private AudioDevice mPreviousDefaultOutputAudioDevice;
+     private HeadsetReceiver mHeadsetReceiver;
+@@ -170,6 +183,15 @@ public class AudioHelper implements OnAudioFocusChangeListener {
+                 playSoundUsingMediaPlayer(context, audioAttrs, ringtone);
+             } else {
+                 try {
++                    Ringtone prepared = takePreparedRingtone(defaultRingtoneUri);
++                    if (prepared != null) {
++                        mRingtone = prepared;
++                        long tPlay = android.os.SystemClock.elapsedRealtime();
++                        mRingtone.play();
++                        Log.i("[Audio Helper] Ringtone ringing started from the prepared one (MundoSMS patch): uri [" + (tUri - t0)
++                                + "] ms, play [" + (android.os.SystemClock.elapsedRealtime() - tPlay) + "] ms");
++                        return;
++                    }
+                     mRingtone = RingtoneManager.getRingtone(context, defaultRingtoneUri);
+                     long tRingtone = android.os.SystemClock.elapsedRealtime();
+                     if (mRingtone != null) {
+@@ -191,6 +213,69 @@ public class AudioHelper implements OnAudioFocusChangeListener {
+         }
+     }
+ 
++    private static AudioAttributes ringtoneAudioAttributes() {
++        return new AudioAttributes.Builder()
++            .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
++            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
++            .build();
++    }
++
++    /** MundoSMS: precarga el tono por defecto (llamar desde un hilo de fondo). Se libera solo si no se usa en 60 s. */
++    public void prepareRingtone(Context context) {
++        try {
++            long t0 = SystemClock.elapsedRealtime();
++            Uri uri = getDefaultRingtoneUri(context);
++            if (uri == null) return;
++            synchronized (mPreparedLock) {
++                if (mPreparedRingtone != null && uri.equals(mPreparedUri) && t0 - mPreparedAt < PREPARED_RINGTONE_TTL_MS) {
++                    return;
++                }
++            }
++            final Ringtone ringtone = RingtoneManager.getRingtone(context, uri);
++            if (ringtone == null) return;
++            ringtone.setAudioAttributes(ringtoneAudioAttributes());
++            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) ringtone.setLooping(true);
++            Ringtone old;
++            synchronized (mPreparedLock) {
++                old = mPreparedRingtone;
++                mPreparedRingtone = ringtone;
++                mPreparedUri = uri;
++                mPreparedAt = SystemClock.elapsedRealtime();
++            }
++            if (old != null) old.stop();
++            Log.i("[Audio Helper] Ringtone prepared in [" + (SystemClock.elapsedRealtime() - t0) + "] ms (MundoSMS patch)");
++            new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
++                @Override
++                public void run() {
++                    synchronized (mPreparedLock) {
++                        if (mPreparedRingtone != ringtone) return;
++                        mPreparedRingtone = null;
++                        mPreparedUri = null;
++                    }
++                    ringtone.stop();
++                    Log.i("[Audio Helper] Unused prepared ringtone released (MundoSMS patch)");
++                }
++            }, PREPARED_RINGTONE_TTL_MS);
++        } catch (Exception e) {
++            Log.w("[Audio Helper] Failed to prepare ringtone: ", e);
++        }
++    }
++
++    /* MundoSMS: el tono precargado si es el mismo y no ha caducado; si no, null (y se libera) */
++    private Ringtone takePreparedRingtone(Uri uri) {
++        Ringtone ringtone;
++        boolean usable;
++        synchronized (mPreparedLock) {
++            ringtone = mPreparedRingtone;
++            usable = ringtone != null && uri != null && uri.equals(mPreparedUri)
++                && SystemClock.elapsedRealtime() - mPreparedAt < PREPARED_RINGTONE_TTL_MS;
++            mPreparedRingtone = null;
++            mPreparedUri = null;
++        }
++        if (ringtone != null && !usable) ringtone.stop();
++        return usable ? ringtone : null;
++    }
++
+     public void stopRinging() {
+         if (mRingtone != null) {
+             releaseRingingAudioFocus();
+diff --git a/liblinphone/wrappers/java/classes/org/linphone/core/tools/firebase/FirebaseMessaging.java b/liblinphone/wrappers/java/classes/org/linphone/core/tools/firebase/FirebaseMessaging.java
+index 29ff180..d4367c4 100644
+--- a/liblinphone/wrappers/java/classes/org/linphone/core/tools/firebase/FirebaseMessaging.java
++++ b/liblinphone/wrappers/java/classes/org/linphone/core/tools/firebase/FirebaseMessaging.java
+@@ -110,6 +110,13 @@ public class FirebaseMessaging extends FirebaseMessagingService {
+                 android.util.Log.w("FirebaseMessaging", "[Push Notification] Core not ready after [" + PUSH_HOLD_MS + "] ms, not holding (MundoSMS patch)");
+                 return;
+             }
++            // MundoSMS: el tono, precargado mientras se registra (ver AudioHelper.prepareRingtone)
++            AndroidPlatformHelper.instance().dispatchOnCoreThread(new Runnable() {
++                @Override
++                public void run() {
++                    if (AndroidPlatformHelper.isReady()) AndroidPlatformHelper.instance().prepareRingtoneForPush();
++                }
++            });
+             final CountDownLatch done = new CountDownLatch(1);
+             final String[] reason = new String[] { "timeout" };
+             final CoreListenerStub listener = new CoreListenerStub() {
