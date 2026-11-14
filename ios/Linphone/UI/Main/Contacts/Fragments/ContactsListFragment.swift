@@ -35,6 +35,9 @@ struct ContactsListFragment: View {
 
     var contactFilter: ContactFilter = .all
 
+    /// MundoPhone: en «Nueva llamada», tocar un contacto sin dirección SIP (los de la agenda del móvil) llama a su teléfono
+    var llamarATelefono: Bool = false
+
     var filteredContacts: [ContactAvatarModel] {
         contactsManager.avatarListModel.filter { contact in
             ContactFilterHelper.matchesFilter(contact, filter: contactFilter)
@@ -51,7 +54,8 @@ struct ContactsListFragment: View {
                 index: index,
                 previous: index > 0 ? contacts[index - 1] : nil,
                 showingSheet: $showingSheet,
-                startCallFunc: startCallFunc
+                startCallFunc: startCallFunc,
+                llamarATelefono: llamarATelefono
             )
         }
     }
@@ -72,6 +76,8 @@ struct ContactRow: View {
     @Binding var showingSheet: Bool
 
     var startCallFunc: (_ addr: Address) -> Void
+
+    var llamarATelefono: Bool = false
 
     private static func initial(_ model: ContactAvatarModel) -> Character? {
         return model.nombreOrden.lowercased().folding(options: .diacriticInsensitive, locale: .current).first
@@ -135,6 +141,19 @@ struct ContactRow: View {
                 && contactAvatarModel.friend!.address != nil
             {
                 startCallFunc(contactAvatarModel.friend!.address!)
+            } else if llamarATelefono, let numero = contactAvatarModel.friend?.phoneNumbers.first {
+                // MundoPhone: los contactos de la agenda del móvil solo tienen teléfono, sin dirección SIP. En «Nueva llamada»
+                // (también con la búsqueda por letras) se llama a su primer número, con la cuenta por defecto y las mismas
+                // reglas que un número marcado a mano.
+                CoreContext.shared.doOnCoreQueue { core in
+                    guard let addr = core.interpretUrl(url: numero,
+                                                       applyInternationalPrefix: LinphoneUtils.applyInternationalPrefix(core: core)) else {
+                        return
+                    }
+                    DispatchQueue.main.async {
+                        startCallFunc(addr)
+                    }
+                }
             }
         }
         .onLongPressGesture(minimumDuration: 0.2) {

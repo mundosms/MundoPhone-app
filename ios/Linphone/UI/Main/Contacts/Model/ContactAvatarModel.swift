@@ -251,6 +251,12 @@ class ContactAvatarModel: ObservableObject, Identifiable {
 						avatarModel = ContactAvatarModel(friend: nil, name: addressFriend.name!, address: addressFriend.address!.asStringUriOnly(), withPresence: false)
 					}
 					completion(avatarModel!)
+				} else if let delContacto = ContactsManager.shared.avatarListModel.first(where: {
+					$0.friend != nil && $0.friend!.name == addressFriend.name
+				}) {
+					// MundoPhone: contacto de la agenda (solo teléfono, sin dirección SIP): su ficha, con su nombre y sus
+					// iniciales, y no el número («+» en el círculo de la pantalla de llamada)
+					completion(delContacto)
 				} else {
 					var name = ""
 					if address.displayName != nil {

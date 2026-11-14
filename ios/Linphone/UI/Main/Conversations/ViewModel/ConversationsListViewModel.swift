@@ -360,24 +360,7 @@ class ConversationsListViewModel: ObservableObject {
 		let timeInterval = TimeInterval(startDate)
 		
 		let myNSDate = Date(timeIntervalSince1970: timeInterval)
-		
-		if Calendar.current.isDateInToday(myNSDate) {
-			let formatter = DateFormatter()
-			formatter.dateFormat = Locale.current.identifier == "fr_FR" ? "HH:mm" : "h:mm a"
-			return formatter.string(from: myNSDate)
-		} else if Calendar.current.isDateInYesterday(myNSDate) {
-			let formatter = DateFormatter()
-			formatter.dateFormat = Locale.current.identifier == "fr_FR" ? "HH:mm" : "h:mm a"
-			return "Yesterday"
-		} else if Calendar.current.isDate(myNSDate, equalTo: .now, toGranularity: .year) {
-			let formatter = DateFormatter()
-			formatter.dateFormat = Locale.current.identifier == "fr_FR" ? "dd/MM" : "MM/dd"
-			return formatter.string(from: myNSDate)
-		} else {
-			let formatter = DateFormatter()
-			formatter.dateFormat = Locale.current.identifier == "fr_FR" ? "dd/MM/yy" : "MM/dd/yy"
-			return formatter.string(from: myNSDate)
-		}
+		return myNSDate.mundoPhoneFechaLista
 	}
 	
 	func refreshContactAvatarModel() {

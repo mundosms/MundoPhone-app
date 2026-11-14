@@ -292,7 +292,7 @@ struct StartCallFragment: View {
 									telecomManager.doCallOrJoinConf(address: addr)
 								}
 							}
-						})
+						}, llamarATelefono: true)
 						.padding(.horizontal, 16)
 						
 						if !contactsManager.lastSearchSuggestions.isEmpty {

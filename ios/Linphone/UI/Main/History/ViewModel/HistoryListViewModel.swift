@@ -158,27 +158,7 @@ class HistoryListViewModel: ObservableObject {
 	}
 	
 	func getCallTime(startDate: time_t) -> String {
-		let timeInterval = TimeInterval(startDate)
-		
-		let myNSDate = Date(timeIntervalSince1970: timeInterval)
-		
-		if Calendar.current.isDateInToday(myNSDate) {
-			let formatter = DateFormatter()
-			formatter.dateFormat = Locale.current.identifier == "fr_FR" ? "HH:mm" : "h:mm a"
-			return "Today | " + formatter.string(from: myNSDate)
-		} else if Calendar.current.isDateInYesterday(myNSDate) {
-			let formatter = DateFormatter()
-			formatter.dateFormat = Locale.current.identifier == "fr_FR" ? "HH:mm" : "h:mm a"
-			return "Yesterday | " + formatter.string(from: myNSDate)
-		} else if Calendar.current.isDate(myNSDate, equalTo: .now, toGranularity: .year) {
-			let formatter = DateFormatter()
-			formatter.dateFormat = Locale.current.identifier == "fr_FR" ? "dd/MM | HH:mm" : "MM/dd | h:mm a"
-			return formatter.string(from: myNSDate)
-		} else {
-			let formatter = DateFormatter()
-			formatter.dateFormat = Locale.current.identifier == "fr_FR" ? "dd/MM/yy | HH:mm" : "MM/dd/yy | h:mm a"
-			return formatter.string(from: myNSDate)
-		}
+		return Date(timeIntervalSince1970: TimeInterval(startDate)).mundoPhoneFechaHistorial
 	}
 	
 	func filterCallLogs(filter: String) {
@@ -422,5 +402,49 @@ class HistoryListViewModel: ObservableObject {
 			}
 		})
 		chatRoom.addDelegate(delegate: historyChatRoomDelegate!)
+	}
+}
+
+/// MundoPhone: fechas cortas con el formato del idioma del móvil: «Hoy | 17:36», «Ayer», «14/11» en español; «Today»,
+/// «11/14» en inglés. En vez de «Today»/«Yesterday» fijos en inglés y el formato de EE. UU. (mes/día y 12 horas).
+extension Date {
+	private static func formato(_ plantilla: String) -> DateFormatter {
+		let formatter = DateFormatter()
+		formatter.locale = Locale.current
+		formatter.setLocalizedDateFormatFromTemplate(plantilla)
+		return formatter
+	}
+
+	/// «Hoy» o «Ayer» en el idioma del móvil, con mayúscula; nil si no es ni hoy ni ayer
+	var mundoPhoneHoyOAyer: String? {
+		guard Calendar.current.isDateInToday(self) || Calendar.current.isDateInYesterday(self) else { return nil }
+		let formatter = DateFormatter()
+		formatter.locale = Locale.current
+		formatter.dateStyle = .medium
+		formatter.timeStyle = .none
+		formatter.doesRelativeDateFormatting = true
+		let texto = formatter.string(from: self)
+		return texto.prefix(1).uppercased(with: Locale.current) + String(texto.dropFirst())
+	}
+
+	/// La hora con el formato del móvil (24 h en español)
+	var mundoPhoneHora: String {
+		return Date.formato("jm").string(from: self)
+	}
+
+	private var mundoPhoneDia: String {
+		let esteAno = Calendar.current.isDate(self, equalTo: .now, toGranularity: .year)
+		return Date.formato(esteAno ? "dMM" : "dMMyy").string(from: self)
+	}
+
+	/// Historial de llamadas: «Hoy | 17:36», «14/11 | 17:36», «14/11/25 | 17:36»
+	var mundoPhoneFechaHistorial: String {
+		return (mundoPhoneHoyOAyer ?? mundoPhoneDia) + " | " + mundoPhoneHora
+	}
+
+	/// Lista de conversaciones: la hora si es de hoy, «Ayer», o la fecha
+	var mundoPhoneFechaLista: String {
+		if Calendar.current.isDateInToday(self) { return mundoPhoneHora }
+		return mundoPhoneHoyOAyer ?? mundoPhoneDia
 	}
 }
