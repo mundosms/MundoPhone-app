@@ -87,6 +87,7 @@
                         android:paddingEnd="15dp"
                         android:paddingBottom="10dp"
                         android:text="@={viewModel.searchFilter}"
+                        app:sinInvisibles="@{true}"
                         android:textSize="14sp"
                         app:layout_constraintHeight_min="48dp"
                         app:layout_constraintWidth_max="@dimen/text_input_max_width"

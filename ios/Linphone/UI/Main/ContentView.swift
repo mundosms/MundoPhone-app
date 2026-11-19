@@ -669,7 +669,8 @@ struct ContentView: View {
 															if value.contains("\n") {
 																newValue = value.replacingOccurrences(of: "\n", with: "")
 															}
-															text = newValue
+															// MundoPhone: sin los invisibles de lo pegado (teléfonos copiados de otras apps)
+															text = newValue.sinInvisibles
 														}
 													))
 													.default_text_style_white_700(styleSize: 15)
@@ -713,7 +714,8 @@ struct ContentView: View {
 															if value.contains("\n") {
 																newValue = value.replacingOccurrences(of: "\n", with: "")
 															}
-															text = newValue
+															// MundoPhone: sin los invisibles de lo pegado (teléfonos copiados de otras apps)
+															text = newValue.sinInvisibles
 														}
 													))
 													.default_text_style_700(styleSize: 15)

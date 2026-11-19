@@ -93,6 +93,12 @@ struct ConversationForwardMessageFragment: View {
 								.focused($isSearchFieldFocused)
 								.padding(.horizontal, 30)
 								.onChange(of: conversationForwardMessageViewModel.searchField) { newValue in
+									// MundoPhone: sin los invisibles de lo pegado (teléfonos copiados de otras apps): el campo se reescribe limpio
+									let limpio = newValue.sinInvisibles
+									if limpio != newValue {
+										conversationForwardMessageViewModel.searchField = limpio
+										return
+									}
 									if newValue.isEmpty {
 										conversationForwardMessageViewModel.resetFilterConversations()
 									} else {

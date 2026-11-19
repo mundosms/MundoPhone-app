@@ -128,6 +128,12 @@ struct StartCallFragment: View {
 							.focused($isSearchFieldFocused)
 							.padding(.horizontal, 30)
 							.onChange(of: startCallViewModel.searchField) { newValue in
+								// MundoPhone: sin los invisibles de lo pegado (teléfonos copiados de otras apps): el campo se reescribe limpio
+								let limpio = newValue.sinInvisibles
+								if limpio != newValue {
+									startCallViewModel.searchField = limpio
+									return
+								}
 								magicSearch.currentFilter = newValue
 								// MundoPhone: con solo cifras (el marcador), también nombres por las letras del teclado
 								magicSearch.searchForContacts(t9: true)

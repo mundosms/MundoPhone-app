@@ -92,6 +92,7 @@ import org.linphone.core.Account
 import org.linphone.utils.Event
 import org.linphone.utils.FileUtils
 import org.linphone.utils.LinphoneUtils
+import org.linphone.utils.sinInvisibles
 import androidx.core.content.edit
 import org.linphone.ui.sso.SingleSignOnActivity
 
@@ -1125,8 +1126,10 @@ class MainActivity : GenericActivity() {
 
         Log.i("$TAG Found URI [$uri] as data for intent [${intent.action}]")
         val sipUriToCall = when {
-            uri.startsWith("tel:") -> uri.substring("tel:".length)
-            uri.startsWith("callto:") -> uri.substring("callto:".length)
+            // MundoPhone: el número llega codificado (%20, %2B…) y a veces con los invisibles de un teléfono copiado
+            // (%E2%80%AA…): sin descodificar, interpretUrl llamaba a «%e2%80%aa+34%20…» (ver TextoPegado.kt)
+            uri.startsWith("tel:") -> Uri.decode(uri.substring("tel:".length)).sinInvisibles()
+            uri.startsWith("callto:") -> Uri.decode(uri.substring("callto:".length)).sinInvisibles()
             uri.startsWith("sip-linphone:") -> uri.replace("sip-linphone:", "sip:")
             uri.startsWith("linphone-sip:") -> uri.replace("linphone-sip:", "sip:")
             uri.startsWith("sips-linphone:") -> uri.replace("sips-linphone:", "sips:")

@@ -22,6 +22,24 @@ import Foundation
 /// MundoPhone: buscar en el marcador por las letras del teclado, como los teléfonos de siempre: 7272
 /// saca «Papa» y «Carlos SARAworld» además de los números que contienen 7272. Casa el INICIO de cualquier palabra del
 /// nombre, sin acentos ni mayúsculas (la ñ va en el 6, con la n). Solo Foundation: se prueba aparte con swiftc.
+extension String {
+	/// MundoPhone: el texto que se pega desde otras apps trae caracteres invisibles que el SDK no reconoce y con los que la
+	/// búsqueda no encuentra nada aunque en pantalla se vea igual: iOS rodea los teléfonos copiados de Teléfono/Contactos
+	/// con marcas de dirección (U+202A…U+202C) y muchas webs y apps separan las cifras con espacios duros (U+00A0, U+202F).
+	/// Los caracteres de formato (categoría Cf) se quitan y cualquier espacio raro (categoría Zs) pasa a espacio normal.
+	var sinInvisibles: String {
+		var limpio = String.UnicodeScalarView()
+		for u in unicodeScalars {
+			switch u.properties.generalCategory {
+			case .format: continue
+			case .spaceSeparator: limpio.append(" ")
+			default: limpio.append(u)
+			}
+		}
+		return String(limpio)
+	}
+}
+
 enum MarcadorT9 {
 	/// ¿Es una búsqueda del marcador por teclas? Solo cifras 0-9 (con *, # o + no: eso es marcar).
 	static func esSoloCifras(_ texto: String) -> Bool {

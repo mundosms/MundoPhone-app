@@ -88,6 +88,12 @@ struct StartConversationFragment: View {
 								.focused($isSearchFieldFocused)
 								.padding(.horizontal, 30)
 								.onChange(of: startConversationViewModel.searchField) { newValue in
+									// MundoPhone: sin los invisibles de lo pegado (teléfonos copiados de otras apps): el campo se reescribe limpio
+									let limpio = newValue.sinInvisibles
+									if limpio != newValue {
+										startConversationViewModel.searchField = limpio
+										return
+									}
 									magicSearch.currentFilter = newValue
 									magicSearch.searchForContacts()
 								}

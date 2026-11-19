@@ -155,6 +155,7 @@
                 android:paddingVertical="1dp"
                 android:imeOptions="actionSearch"
                 android:text="@={viewModel.searchFilter}"
+                app:sinInvisibles="@{true}"
                 android:hint="@string/search"
                 android:background="@android:color/transparent" />
 
