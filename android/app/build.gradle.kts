@@ -111,7 +111,7 @@ android {
         // en [app] config_version el número con el que comparan las migraciones de upstream (600000, 602000…); ese
         // número va aparte, en LINPHONE_CONFIG_VERSION, y es el de la base de upstream: súbelo SOLO al cambiar de base
         // de upstream.
-        versionCode = 2030100
+        versionCode = 2030101
         versionName = "2.3.1"
 
         manifestPlaceholders["appAuthRedirectScheme"] = packageName

@@ -54,6 +54,11 @@
     <uses-feature
         android:name="android.hardware.telephony"
         android:required="false" />
+    <!-- MundoPhone: el SDK pide ACCESS_WIFI_STATE y CHANGE_WIFI_MULTICAST_STATE, y con ellos Google Play deduce que la wifi
+         es obligatoria y no deja publicar (la app funciona igual por datos móviles): se declara opcional. -->
+    <uses-feature
+        android:name="android.hardware.wifi"
+        android:required="false" />
 
     <application
         android:name=".LinphoneApplication"
