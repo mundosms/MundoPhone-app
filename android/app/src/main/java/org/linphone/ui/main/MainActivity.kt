@@ -73,6 +73,7 @@ import org.linphone.databinding.MainActivityBinding
 import org.linphone.favorites.FavoriteCall
 import androidx.appcompat.app.AlertDialog
 import org.linphone.core.CallProblemReport
+import org.linphone.core.MundoPhoneGuiaXiaomi
 import org.linphone.core.MundoPhoneSegundoPlano
 import org.linphone.ui.main.help.fragment.DebugFragment
 import org.linphone.ui.GenericActivity
@@ -139,6 +140,12 @@ class MainActivity : GenericActivity() {
     private var currentlyDisplayedAccountSelectionDialog: Dialog? = null
 
     private var navigatedToDefaultFragment = false
+
+    // MundoPhone: guía de Xiaomi paso a paso. Los ajustes ya abiertos en esta pasada y cuándo se abrió el último, para
+    // volver a enseñarla al regresar de los ajustes (solo si se vuelve pronto: si la pantalla no llegó a abrirse, no
+    // puede salir sola horas después)
+    private val ajustesAbiertosEnLaGuia = mutableSetOf<MundoPhoneGuiaXiaomi.Ajuste>()
+    private var guiaXiaomiAbrioAjustesEn = 0L
 
     // MundoPhone: con el menú lateral abierto, «atrás» lo cierra en vez de salir. El drawerlayout 1.1.1
     // solo lo hace con la tecla, que con el «atrás» predictivo (enableOnBackInvokedCallback, Android 13+) ya no le llega.
@@ -602,52 +609,64 @@ class MainActivity : GenericActivity() {
     }
 
     /**
-     * MundoPhone: cómo dejar que Android despierte la app con las llamadas (MundoPhoneSegundoPlano). Desde la barra de aviso
-     * y, en Xiaomi, desde Ayuda (aunque se pulsara «Ya está»).
+     * MundoPhone: cómo dejar que Android despierte la app con las llamadas y las enseñe con el móvil bloqueado
+     * (MundoPhoneSegundoPlano). Desde la barra de aviso y, en Xiaomi, desde Ayuda (aunque se pulsara «Ya está»).
+     * [continuar]: al volver de un ajuste abierto desde la propia guía, que sigue por el siguiente.
      */
     @UiThread
-    fun showBackgroundGuide(xiaomi: Boolean) {
+    fun showBackgroundGuide(xiaomi: Boolean, continuar: Boolean = false) {
         val builder = AlertDialog.Builder(this).setTitle(R.string.background_guide_title)
         if (xiaomi) {
             // Cada paso con su estado: ✓ lo que ya está, la instrucción lo que falta y «compruébalo» lo que no se
-            // puede saber. Un botón por ajuste que falta: «Inicio automático» no está en la información de la app
-            // en HyperOS. Al arreglarlo, el aviso se va solo al volver; «Ya está» queda siempre por si la lectura
-            // de «Inicio automático» (no oficial) se equivoca.
+            // puede saber. Un solo botón, el del siguiente ajuste que falta (MundoPhoneGuiaXiaomi.siguiente): son
+            // cuatro pantallas distintas y un diálogo no lleva más de tres botones. Al volver de cada una, la guía se
+            // abre otra vez con el estado nuevo. «Ya está» queda siempre que algo no esté bien, porque las lecturas
+            // de Xiaomi no son oficiales y no pueden dejar el aviso sin salida.
+            if (!continuar) ajustesAbiertosEnLaGuia.clear()
             val estado = MundoPhoneSegundoPlano.estado(this)
             val bateriaMal = estado.bateriaOptimizada || estado.segundoPlanoRestringido || estado.grupoRestringido
-            val pasos = listOf(
-                getString(R.string.background_guide_xiaomi_intro),
-                getString(
-                    when (estado.inicioAutomatico) {
-                        true -> R.string.background_guide_autostart_ok
-                        false -> R.string.background_guide_autostart_todo
-                        null -> R.string.background_guide_autostart_check
-                    }
-                ),
-                getString(if (bateriaMal) R.string.background_guide_battery_todo else R.string.background_guide_battery_ok),
-                getString(R.string.background_guide_lock)
+            val lecturas = listOfNotNull(
+                MundoPhoneGuiaXiaomi.Ajuste.INICIO_AUTOMATICO to estado.inicioAutomatico,
+                MundoPhoneGuiaXiaomi.Ajuste.BATERIA to !bateriaMal,
+                // Solo desde Android 14, que es cuando el permiso se puede negar
+                estado.pantallaCompleta?.let { MundoPhoneGuiaXiaomi.Ajuste.PANTALLA_COMPLETA to it },
+                MundoPhoneGuiaXiaomi.Ajuste.OTROS_PERMISOS to estado.otrosPermisos
             )
+            val pasos = listOf(getString(R.string.background_guide_xiaomi_intro)) + lecturas.map { (ajuste, bien) ->
+                getString(textoDelPaso(ajuste, bien))
+            } + getString(R.string.background_guide_lock)
             builder.setMessage(pasos.joinToString("\n\n"))
-            if (estado.inicioAutomatico != true) {
-                builder.setPositiveButton(R.string.background_guide_autostart) { _, _ ->
-                    MundoPhoneSegundoPlano.abrirInicioAutomatico(this)
+
+            val siguiente = MundoPhoneGuiaXiaomi.siguiente(lecturas, ajustesAbiertosEnLaGuia)
+            if (siguiente != null) {
+                builder.setPositiveButton(botonDelPaso(siguiente)) { _, _ ->
+                    ajustesAbiertosEnLaGuia += siguiente
+                    guiaXiaomiAbrioAjustesEn = SystemClock.elapsedRealtime()
+                    Log.i("$TAG Xiaomi guide: opening [$siguiente]")
+                    val abierto = when (siguiente) {
+                        MundoPhoneGuiaXiaomi.Ajuste.INICIO_AUTOMATICO -> MundoPhoneSegundoPlano.abrirInicioAutomatico(this)
+                        MundoPhoneGuiaXiaomi.Ajuste.BATERIA -> MundoPhoneSegundoPlano.abrirAjustes(this)
+                        MundoPhoneGuiaXiaomi.Ajuste.PANTALLA_COMPLETA -> Compatibility.requestFullScreenIntentPermission(this)
+                        MundoPhoneGuiaXiaomi.Ajuste.OTROS_PERMISOS -> MundoPhoneSegundoPlano.abrirOtrosPermisos(this)
+                    }
+                    if (!abierto) {
+                        // Nada que abrir: sigue la guía en el acto con el paso siguiente
+                        guiaXiaomiAbrioAjustesEn = 0L
+                        showBackgroundGuide(xiaomi = true, continuar = true)
+                    }
                 }
             }
-            if (bateriaMal) {
-                builder.setNegativeButton(R.string.background_guide_battery) { _, _ ->
-                    MundoPhoneSegundoPlano.abrirAjustes(this)
-                }
-            }
-            if (estado.inicioAutomatico == true && !bateriaMal) {
+            if (lecturas.all { it.second == true }) {
                 builder.setNeutralButton(R.string.background_guide_ok, null)
             } else {
-                // Siempre: la lectura de «Inicio automático» no es oficial y no puede dejar el aviso sin salida
-                val lectura = estado.inicioAutomatico?.toString() ?: "unknown"
+                val inicio = estado.inicioAutomatico?.toString() ?: "unknown"
+                val otros = estado.otrosPermisos?.toString() ?: "unknown"
                 builder.setNeutralButton(R.string.background_guide_done) { _, _ ->
                     coreContext.postOnCoreThread {
                         corePreferences.xiaomiBackgroundGuideDone = true
-                        corePreferences.xiaomiGuideDoneAutostart = lectura
-                        Log.i("$TAG Xiaomi guide marked as done by the user, autostart read as [$lectura]")
+                        corePreferences.xiaomiGuideDoneAutostart = inicio
+                        corePreferences.xiaomiGuideDoneOtherPermissions = otros
+                        Log.i("$TAG Xiaomi guide marked as done by the user, autostart read as [$inicio], other permissions as [$otros]")
                         coreContext.postOnMainThread { viewModel.updateMissingPermissionAlert() }
                     }
                 }
@@ -662,8 +681,40 @@ class MainActivity : GenericActivity() {
         builder.show()
     }
 
+    // MundoPhone: el texto de cada paso de la guía de Xiaomi según su lectura (true bien, false mal, null no se sabe)
+    private fun textoDelPaso(ajuste: MundoPhoneGuiaXiaomi.Ajuste, bien: Boolean?): Int = when (ajuste) {
+        MundoPhoneGuiaXiaomi.Ajuste.INICIO_AUTOMATICO -> when (bien) {
+            true -> R.string.background_guide_autostart_ok
+            false -> R.string.background_guide_autostart_todo
+            null -> R.string.background_guide_autostart_check
+        }
+        MundoPhoneGuiaXiaomi.Ajuste.BATERIA ->
+            if (bien == true) R.string.background_guide_battery_ok else R.string.background_guide_battery_todo
+        MundoPhoneGuiaXiaomi.Ajuste.PANTALLA_COMPLETA ->
+            if (bien == true) R.string.background_guide_full_screen_ok else R.string.background_guide_full_screen_todo
+        MundoPhoneGuiaXiaomi.Ajuste.OTROS_PERMISOS -> when (bien) {
+            true -> R.string.background_guide_other_permissions_ok
+            false -> R.string.background_guide_other_permissions_todo
+            null -> R.string.background_guide_other_permissions_check
+        }
+    }
+
+    private fun botonDelPaso(ajuste: MundoPhoneGuiaXiaomi.Ajuste): Int = when (ajuste) {
+        MundoPhoneGuiaXiaomi.Ajuste.INICIO_AUTOMATICO -> R.string.background_guide_autostart
+        MundoPhoneGuiaXiaomi.Ajuste.BATERIA -> R.string.background_guide_battery
+        MundoPhoneGuiaXiaomi.Ajuste.PANTALLA_COMPLETA -> R.string.background_guide_full_screen
+        MundoPhoneGuiaXiaomi.Ajuste.OTROS_PERMISOS -> R.string.background_guide_other_permissions
+    }
+
     override fun onResume() {
         super.onResume()
+
+        // MundoPhone: de vuelta de un ajuste abierto desde la guía de Xiaomi, la guía sigue con el estado nuevo
+        if (guiaXiaomiAbrioAjustesEn != 0L) {
+            val hace = SystemClock.elapsedRealtime() - guiaXiaomiAbrioAjustesEn
+            guiaXiaomiAbrioAjustesEn = 0L
+            if (hace < 10 * 60 * 1000L) showBackgroundGuide(xiaomi = true, continuar = true)
+        }
 
         viewModel.enableAccountMonitoring(true)
         viewModel.updateMissingPermissionAlert()

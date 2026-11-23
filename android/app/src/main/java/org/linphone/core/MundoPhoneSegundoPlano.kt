@@ -63,6 +63,11 @@ object MundoPhoneSegundoPlano {
     // «Inicio automático» de MIUI/HyperOS: una operación interna de AppOpsManager (no hay API pública)
     private const val OP_INICIO_AUTOMATICO_MIUI = 10008
 
+    // «Otros permisos» de MIUI/HyperOS, también operaciones internas: sin ellos la pantalla de la llamada no sale sobre el
+    // bloqueo aunque Android dé la pantalla completa (la llamada suena y solo se ve al desbloquear)
+    private const val OP_PANTALLA_BLOQUEO_MIUI = 10020
+    private const val OP_VENTANAS_SEGUNDO_PLANO_MIUI = 10021
+
     /** Lo que Android deja hacer a la app en segundo plano, con las APIs oficiales. */
     class Estado(
         val bateriaOptimizada: Boolean,
@@ -70,9 +75,18 @@ object MundoPhoneSegundoPlano {
         val grupo: Int?,
         val xiaomi: Boolean,
         /** Solo en Xiaomi: true o false si el sistema lo dice; null si no se puede saber. */
-        val inicioAutomatico: Boolean?
+        val inicioAutomatico: Boolean?,
+        /** Solo en Xiaomi, como inicioAutomatico: «Mostrar en pantalla de bloqueo». */
+        val pantallaBloqueo: Boolean? = null,
+        /** Solo en Xiaomi, como inicioAutomatico: «Mostrar ventanas emergentes mientras se ejecuta en segundo plano». */
+        val ventanasSegundoPlano: Boolean? = null,
+        /** Android 14+: el permiso de pantalla completa de la llamada entrante; null antes de Android 14 (no hace falta). */
+        val pantallaCompleta: Boolean? = null
     ) {
         val grupoRestringido: Boolean get() = grupo == BUCKET_RESTRICTED
+
+        /** «Otros permisos» de Xiaomi: las dos lecturas juntas (MundoPhoneGuiaXiaomi.juntar). */
+        val otrosPermisos: Boolean? get() = MundoPhoneGuiaXiaomi.juntar(pantallaBloqueo, ventanasSegundoPlano)
     }
 
     @AnyThread
@@ -98,7 +112,21 @@ object MundoPhoneSegundoPlano {
             null
         }
         val xiaomi = esXiaomi()
-        return Estado(optimizada, restringido, grupo, xiaomi, if (xiaomi) inicioAutomaticoMiui(context) else null)
+        val pantallaCompleta = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            context.getSystemService(NotificationManager::class.java)?.canUseFullScreenIntent()
+        } else {
+            null
+        }
+        return Estado(
+            optimizada,
+            restringido,
+            grupo,
+            xiaomi,
+            if (xiaomi) inicioAutomaticoMiui(context) else null,
+            if (xiaomi) operacionMiui(context, OP_PANTALLA_BLOQUEO_MIUI) else null,
+            if (xiaomi) operacionMiui(context, OP_VENTANAS_SEGUNDO_PLANO_MIUI) else null,
+            pantallaCompleta
+        )
     }
 
     /**
@@ -107,7 +135,14 @@ object MundoPhoneSegundoPlano {
      * o no deja leerla, null: entonces la guía pide comprobarlo y vale el «Ya está» del usuario.
      */
     @AnyThread
-    fun inicioAutomaticoMiui(context: Context): Boolean? {
+    fun inicioAutomaticoMiui(context: Context): Boolean? = operacionMiui(context, OP_INICIO_AUTOMATICO_MIUI)
+
+    /**
+     * Una operación interna de MIUI/HyperOS en AppOpsManager: true (permitida), false (denegada) o null si el sistema no la
+     * tiene, no deja leerla o contesta otra cosa. Las tres que se leen («Inicio automático», «Mostrar en pantalla de
+     * bloqueo» y ventanas en segundo plano) no son API pública: por eso null nunca se toma por bien ni por mal.
+     */
+    private fun operacionMiui(context: Context, operacion: Int): Boolean? {
         return try {
             val appOps = context.getSystemService(AppOpsManager::class.java) ?: return null
             val metodo = AppOpsManager::class.java.getMethod(
@@ -116,7 +151,7 @@ object MundoPhoneSegundoPlano {
                 Int::class.javaPrimitiveType,
                 String::class.java
             )
-            when (metodo.invoke(appOps, OP_INICIO_AUTOMATICO_MIUI, Process.myUid(), context.packageName) as? Int) {
+            when (metodo.invoke(appOps, operacion, Process.myUid(), context.packageName) as? Int) {
                 AppOpsManager.MODE_ALLOWED -> true
                 AppOpsManager.MODE_IGNORED -> false
                 else -> null
@@ -157,18 +192,41 @@ object MundoPhoneSegundoPlano {
             ),
             Intent("miui.intent.action.OP_AUTO_START").addCategory(Intent.CATEGORY_DEFAULT)
         )
+        return abrirPrimera(context, candidatos, "autostart") || abrirAjustes(context)
+    }
+
+    /**
+     * «Otros permisos» de MIUI/HyperOS, donde están «Mostrar en pantalla de bloqueo» y las ventanas emergentes en segundo
+     * plano: el editor de permisos del centro de seguridad (con dos nombres según la versión) y, si no se puede abrir, la
+     * información de la app, que en MIUI también lleva a «Otros permisos». Devuelve false si no se abrió nada.
+     */
+    @AnyThread
+    fun abrirOtrosPermisos(context: Context): Boolean {
+        val candidatos = listOf(
+            "com.miui.permcenter.permissions.PermissionsEditorActivity",
+            "com.miui.permcenter.permissions.AppPermissionsEditorActivity"
+        ).map { clase ->
+            Intent("miui.intent.action.APP_PERM_EDITOR").setClassName("com.miui.securitycenter", clase)
+                .putExtra("extra_pkgname", context.packageName)
+        }
+        return abrirPrimera(context, candidatos, "other permissions") || abrirAjustes(context)
+    }
+
+    // La primera pantalla de la lista que se deje abrir (las de Xiaomi cambian de nombre entre versiones)
+    private fun abrirPrimera(context: Context, candidatos: List<Intent>, que: String): Boolean {
         for (intent in candidatos) {
+            val nombre = intent.component?.className ?: intent.action
             try {
                 context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                Log.i("$TAG Autostart settings opened [${intent.component?.className ?: intent.action}]")
+                Log.i("$TAG Xiaomi $que settings opened [$nombre]")
                 return true
             } catch (e: ActivityNotFoundException) {
-                Log.w("$TAG No autostart screen [${intent.component?.className ?: intent.action}]")
+                Log.w("$TAG No Xiaomi $que screen [$nombre]")
             } catch (e: SecurityException) {
-                Log.w("$TAG Autostart screen not allowed [${intent.component?.className ?: intent.action}]: $e")
+                Log.w("$TAG Xiaomi $que screen not allowed [$nombre]: $e")
             }
         }
-        return abrirAjustes(context)
+        return false
     }
 
     /**
@@ -183,12 +241,14 @@ object MundoPhoneSegundoPlano {
     fun registrar(context: Context) {
         try {
             val e = estado(context)
-            val autostart = if (e.xiaomi) (e.inicioAutomatico?.toString() ?: "unknown") else "n/a"
+
+            fun xiaomi(lectura: Boolean?) = if (e.xiaomi) (lectura?.toString() ?: "unknown") else "n/a"
             Log.i(
                 "$TAG Manufacturer [${Build.MANUFACTURER}] brand [${Build.BRAND}] model [${Build.MODEL}] Android [${Build.VERSION.RELEASE}], " +
                     "Xiaomi layer [${capaXiaomi() ?: "n/a"}], " +
                     "battery optimized [${e.bateriaOptimizada}], background restricted [${e.segundoPlanoRestringido}], " +
-                    "standby bucket [${nombreGrupo(e.grupo)}], autostart [$autostart]"
+                    "standby bucket [${nombreGrupo(e.grupo)}], autostart [${xiaomi(e.inicioAutomatico)}], " +
+                    "show on lock screen [${xiaomi(e.pantallaBloqueo)}], background pop-ups [${xiaomi(e.ventanasSegundoPlano)}]"
             )
             Log.i(
                 "$TAG Data saver [${ahorroDeDatos(context)}], pause app if unused [${pausaSiNoSeUsa(context)}], " +
@@ -232,19 +292,25 @@ object MundoPhoneSegundoPlano {
     }
 
     /**
-     * Para el campo «móvil» del envío a soporte: la capa de Xiaomi y la lectura de «Inicio automático». Va en el propio
-     * envío (no solo dentro del registro), así que con el tiempo se puede cruzar modelo, versión y si la lectura funciona.
-     * Vacío fuera de Xiaomi.
+     * Para el campo «móvil» del envío a soporte: la capa de Xiaomi y las lecturas de «Inicio automático» y de «Otros
+     * permisos». Va en el propio envío (no solo dentro del registro), así que con el tiempo se puede cruzar modelo, versión
+     * y si la lectura funciona. Vacío fuera de Xiaomi.
      */
     @AnyThread
     fun resumenParaSoporte(context: Context): String {
         if (!esXiaomi()) return ""
-        val lectura = when (inicioAutomaticoMiui(context)) {
+
+        fun lectura(valor: Boolean?) = when (valor) {
             true -> "sí"
             false -> "no"
             null -> "?"
         }
-        return listOfNotNull(capaXiaomi(), "inicio automático: $lectura").joinToString(" / ", prefix = " / ")
+        return listOfNotNull(
+            capaXiaomi(),
+            "inicio automático: ${lectura(inicioAutomaticoMiui(context))}",
+            "pantalla de bloqueo: ${lectura(operacionMiui(context, OP_PANTALLA_BLOQUEO_MIUI))}",
+            "ventanas en segundo plano: ${lectura(operacionMiui(context, OP_VENTANAS_SEGUNDO_PLANO_MIUI))}"
+        ).joinToString(" / ", prefix = " / ")
     }
 
     // Propiedad del sistema (android.os.SystemProperties, sin API pública); "" si no se puede leer

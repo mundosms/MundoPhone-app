@@ -888,14 +888,19 @@ class MainViewModel
             false -> !(hecho && corePreferences.xiaomiGuideDoneAutostart == "false")
             null -> !hecho
         }
-        val xiaomiEnRiesgo = estado.xiaomi && (estado.bateriaOptimizada || inicioAutomaticoMal)
+        // «Otros permisos» (pantalla de bloqueo y ventanas en segundo plano): solo si se leen denegados, que sin lectura no
+        // hay que molestar más (el «Inicio automático» ya pide el «Ya está»); y si el usuario dijo «Ya está» leyéndose ya
+        // denegados, gana el usuario, como con «Inicio automático»
+        val otrosPermisosMal = estado.otrosPermisos == false &&
+            !(hecho && corePreferences.xiaomiGuideDoneOtherPermissions == "false")
+        val xiaomiEnRiesgo = estado.xiaomi && (estado.bateriaOptimizada || inicioAutomaticoMal || otrosPermisosMal)
         val enRiesgo = estado.segundoPlanoRestringido || estado.grupoRestringido || xiaomiEnRiesgo
         val mostrado = alertsList.any { it.first == APP_RESTRICTED_IN_BACKGROUND }
         if (enRiesgo && !mostrado) {
             Log.w(
                 "$TAG Android may not wake the app up for calls: background restricted [${estado.segundoPlanoRestringido}], " +
                     "restricted bucket [${estado.grupoRestringido}], Xiaomi [${estado.xiaomi}], battery optimized [${estado.bateriaOptimizada}], " +
-                    "autostart [${estado.inicioAutomatico ?: "unknown"}]"
+                    "autostart [${estado.inicioAutomatico ?: "unknown"}], other permissions [${estado.otrosPermisos ?: "unknown"}]"
             )
             addAlert(APP_RESTRICTED_IN_BACKGROUND, AppUtils.getString(R.string.background_restricted_alert))
         } else if (!enRiesgo && mostrado) {

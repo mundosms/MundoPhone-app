@@ -94,6 +94,15 @@ class CorePreferences
             config.setString("app", "mundosms_xiaomi_guide_done_autostart", value)
         }
 
+    // MundoPhone: cómo se leían «Otros permisos» de Xiaomi al pulsar «Ya está» (true/false/unknown), con la misma regla
+    // que xiaomiGuideDoneAutostart: si se leían denegados y el usuario dijo que ya estaba, gana el usuario
+    @get:AnyThread @set:WorkerThread
+    var xiaomiGuideDoneOtherPermissions: String
+        get() = config.getString("app", "mundosms_xiaomi_guide_done_other_permissions", "") ?: ""
+        set(value) {
+            config.setString("app", "mundosms_xiaomi_guide_done_other_permissions", value)
+        }
+
     @get:AnyThread @set:WorkerThread
     var autoStart: Boolean
         get() = config.getBool("app", "auto_start", true)
