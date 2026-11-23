@@ -100,6 +100,116 @@ struct LoginFragment: View {
 					}
 				}
 				
+				// MundoPhone: las ventanas de «cómo sacar el QR» y de recuperar la contraseña, sobre la PANTALLA y no dentro del
+				// contenido desplazable: colgadas de él se centraban respecto a todo el contenido (más alto que la pantalla) y había
+				// que desplazarse para verlas enteras (iPhone 14 Pro). Más compactas para que quepan enteras.
+				Group {
+            if isMostrarRecordarContrasena {
+                ZStack {
+                    Color.black.opacity(0.4)
+                        .ignoresSafeArea()
+                    
+                    VStack(spacing: 10) {
+                        Text("popup_pasos_a_seguir")
+                            .default_text_style_uncolored(styleSize: 19)
+                        Text("popup_paso1")
+                            .default_text_style_uncolored(styleSize: 15)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Image("contrasena1")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: 260, maxHeight: 130)
+                        Text("popup_paso2")
+                            .default_text_style_uncolored(styleSize: 15)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Image("contrasena2")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: 260, maxHeight: 130)
+                        
+                        Link(
+                            String(localized: "open_website"),
+                            destination: URL(string: "https://www.mundosms.es/acceso")!
+                        )
+                        .default_text_style_white_600(styleSize: 18)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.orangeMain500)
+                        .cornerRadius(50)
+
+                        Button("dialog_close") {
+                            isMostrarRecordarContrasena = false
+                        }
+                        .default_text_style_white_600(styleSize: 18)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity)
+                        .background(Color.redDanger500)
+                        .cornerRadius(50)
+                    }
+                    .padding(20)
+                    .background(Color.white)
+                    .cornerRadius(40)
+                    .shadow(radius: 10)
+                    .padding(.horizontal, 20)
+                }
+            } else if isMostrarPopupQR {
+                ZStack {
+                    Color.black.opacity(0.4)
+                        .ignoresSafeArea()
+                    
+                    VStack(spacing: 10) {
+                        Text("assistant_scan_qr_code")
+                            .default_text_style_uncolored(styleSize: 19)
+                        Text("popup_paso1")
+                            .default_text_style_uncolored(styleSize: 15)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Image("contrasena1")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: 260, maxHeight: 130)
+                        Text("qr_paso2")
+                            .default_text_style_uncolored(styleSize: 15)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Image("qr-popup")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: 260, maxHeight: 130)
+                        
+                        NavigationLink(destination: {
+                            QrCodeScannerFragment()
+                        }, label: {
+                            Text("dialog_continue")
+                            .default_text_style_white_600(styleSize: 18)
+                        })
+                        .default_text_style_white_600(styleSize: 18)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.orangeMain500)
+                        .cornerRadius(50)
+
+                        Button("dialog_close") {
+                            isMostrarPopupQR = false
+                        }
+                        .default_text_style_white_600(styleSize: 18)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity)
+                        .background(Color.redDanger500)
+                        .cornerRadius(50)
+                    }
+                    .padding(20)
+                    .background(Color.white)
+                    .cornerRadius(40)
+                    .shadow(radius: 10)
+                    .padding(.horizontal, 20)
+                }
+            }
+        }
+				.zIndex(2)
+
 				if isShowHelpFragment {
 					HelpFragment(
 						isShowHelpFragment: $isShowHelpFragment
@@ -122,6 +232,8 @@ struct LoginFragment: View {
 	}
 	
 	func innerScrollView(geometry: GeometryProxy) -> some View {
+		// MundoPhone: «Agregar extensión» compacta para que quepa entera sin desplazarse en un iPhone de 6,1":
+		// menos relleno y separación en campos y botones, y la montaña de abajo más baja. Si no cabe, se sigue desplazando.
 		VStack {
 			ZStack {
 				HStack {
@@ -171,7 +283,7 @@ struct LoginFragment: View {
 			}
 			.frame(width: geometry.size.width)
 			.padding(.top, 10)
-			.padding(.bottom, 20)
+			.padding(.bottom, 12)
 			
 			VStack(alignment: .leading) {
 				Text(String(localized: "username")+"*")
@@ -184,14 +296,14 @@ struct LoginFragment: View {
 					.autocapitalization(.none)
 					.frame(height: 25)
 					.padding(.horizontal, 20)
-					.padding(.vertical, 15)
+					.padding(.vertical, 10)
 					.cornerRadius(60)
 					.overlay(
 						RoundedRectangle(cornerRadius: 60)
 							.inset(by: 0.5)
 							.stroke(isNameFocused ? Color.orangeMain500 : Color.gray200, lineWidth: 1)
 					)
-					.padding(.bottom)
+					.padding(.bottom, 10)
 					.focused($isNameFocused)
 				
 				Text(String(localized: "password")+"*")
@@ -226,14 +338,14 @@ struct LoginFragment: View {
 					})
 				}
 				.padding(.horizontal, 20)
-				.padding(.vertical, 15)
+				.padding(.vertical, 10)
 				.cornerRadius(60)
 				.overlay(
 					RoundedRectangle(cornerRadius: 60)
 						.inset(by: 0.5)
 						.stroke(isPasswordFocused ? Color.orangeMain500 : Color.gray200, lineWidth: 1)
 				)
-				.padding(.bottom)
+				.padding(.bottom, 10)
                 
                 Text(String(localized: "sip_address_display_name"))
                     .default_text_style_700(styleSize: 15)
@@ -245,14 +357,14 @@ struct LoginFragment: View {
                     .autocapitalization(.none)
                     .frame(height: 25)
                     .padding(.horizontal, 20)
-                    .padding(.vertical, 15)
+                    .padding(.vertical, 10)
                     .cornerRadius(60)
                     .overlay(
                         RoundedRectangle(cornerRadius: 60)
                             .inset(by: 0.5)
                             .stroke(isDisplayNameFocused ? Color.orangeMain500 : Color.gray200, lineWidth: 1)
                     )
-                    .padding(.bottom)
+                    .padding(.bottom, 10)
                     .focused($isDisplayNameFocused)
                 
                 Text(String(localized: "assistant_sip_account_transport_protocol"))
@@ -275,14 +387,14 @@ struct LoginFragment: View {
                 }
                 .frame(height: 25)
                 .padding(.horizontal, 20)
-                .padding(.vertical, 15)
+                .padding(.vertical, 10)
                 .cornerRadius(60)
                 .overlay(
                     RoundedRectangle(cornerRadius: 60)
                         .inset(by: 0.5)
                         .stroke(Color.gray200, lineWidth: 1)
                 )
-                .padding(.bottom)
+                .padding(.bottom, 10)
 				
 				Button(action: {
 					SharedMainViewModel.shared.changeDisplayProfileMode()
@@ -295,11 +407,11 @@ struct LoginFragment: View {
 						.frame(maxWidth: .infinity)
 				})
 				.padding(.horizontal, 20)
-				.padding(.vertical, 10)
+				.padding(.vertical, 6)
 				.background((accountLoginViewModel.username.isEmpty || accountLoginViewModel.passwd.isEmpty) ? Color.orangeMain100 : Color.orangeMain500)
 				.cornerRadius(60)
 				.disabled(accountLoginViewModel.username.isEmpty || accountLoginViewModel.passwd.isEmpty)
-				.padding(.bottom)
+				.padding(.bottom, 10)
 				
 				HStack {
                     Text(.init(String(localized: "assistant_forgotten_password")))
@@ -312,7 +424,7 @@ struct LoginFragment: View {
                         }
 				}
 				.frame(maxWidth: .infinity)
-				.padding(.bottom, 30)
+				.padding(.bottom, 14)
 				
 				HStack {
 					VStack {
@@ -340,14 +452,14 @@ struct LoginFragment: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 20)
-                .padding(.vertical, 10)
+                .padding(.vertical, 6)
                 .cornerRadius(60)
                 .overlay(
                     RoundedRectangle(cornerRadius: 60)
                         .inset(by: 0.5)
                         .stroke(Color.orangeMain500, lineWidth: 1)
                 )
-                .padding(.bottom)
+                .padding(.bottom, 10)
                 .onTapGesture {
                     isMostrarPopupQR = true
                 }
@@ -387,108 +499,11 @@ struct LoginFragment: View {
 			Image("mountain2")
 				.resizable()
 				.scaledToFill()
-				.frame(width: geometry.size.width, height: 60)
+				.frame(width: geometry.size.width, height: 40)
 				.clipped()
 		}
 		.frame(minHeight: geometry.size.height)
 		.padding(.bottom, keyboard.currentHeight)
-        .overlay {
-            if isMostrarRecordarContrasena {
-                ZStack {
-                    Color.black.opacity(0.4)
-                        .ignoresSafeArea()
-                    
-                    VStack(spacing: 16) {
-                        Text("popup_pasos_a_seguir")
-                            .default_text_style_uncolored(styleSize: 22)
-                        Text("popup_paso1")
-                            .default_text_style_uncolored(styleSize: 18)
-                        Image("contrasena1")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: 300)
-                        Text("popup_paso2")
-                            .default_text_style_uncolored(styleSize: 18)
-                        Image("contrasena2")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: 300)
-                        
-                        Link(
-                            String(localized: "open_website"),
-                            destination: URL(string: "https://www.mundosms.es/acceso")!
-                        )
-                        .default_text_style_white_600(styleSize: 20)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.orangeMain500)
-                        .cornerRadius(50)
-
-                        Button("dialog_close") {
-                            isMostrarRecordarContrasena = false
-                        }
-                        .default_text_style_white_600(styleSize: 20)
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(Color.redDanger500)
-                        .cornerRadius(50)
-                    }
-                    .padding(24)
-                    .background(Color.white)
-                    .cornerRadius(40)
-                    .shadow(radius: 10)
-                    .padding(.horizontal, 20)
-                }
-            } else if isMostrarPopupQR {
-                ZStack {
-                    Color.black.opacity(0.4)
-                        .ignoresSafeArea()
-                    
-                    VStack(spacing: 16) {
-                        Text("assistant_scan_qr_code")
-                            .default_text_style_uncolored(styleSize: 22)
-                        Text("popup_paso1")
-                            .default_text_style_uncolored(styleSize: 18)
-                        Image("contrasena1")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: 300)
-                        Text("qr_paso2")
-                            .default_text_style_uncolored(styleSize: 18)
-                        Image("qr-popup")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: 300)
-                        
-                        NavigationLink(destination: {
-                            QrCodeScannerFragment()
-                        }, label: {
-                            Text("dialog_continue")
-                            .default_text_style_white_600(styleSize: 20)
-                        })
-                        .default_text_style_white_600(styleSize: 20)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.orangeMain500)
-                        .cornerRadius(50)
-
-                        Button("dialog_close") {
-                            isMostrarPopupQR = false
-                        }
-                        .default_text_style_white_600(styleSize: 20)
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(Color.redDanger500)
-                        .cornerRadius(50)
-                    }
-                    .padding(24)
-                    .background(Color.white)
-                    .cornerRadius(40)
-                    .shadow(radius: 10)
-                    .padding(.horizontal, 20)
-                }
-            }
-        }
 
     }
 	

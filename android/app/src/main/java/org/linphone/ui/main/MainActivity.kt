@@ -71,7 +71,9 @@ import org.linphone.compatibility.Compatibility
 import org.linphone.core.tools.Log
 import org.linphone.databinding.MainActivityBinding
 import org.linphone.favorites.FavoriteCall
+import androidx.appcompat.app.AlertDialog
 import org.linphone.core.CallProblemReport
+import org.linphone.core.MundoPhoneSegundoPlano
 import org.linphone.ui.main.help.fragment.DebugFragment
 import org.linphone.ui.GenericActivity
 import org.linphone.ui.assistant.AssistantActivity
@@ -120,6 +122,17 @@ class MainActivity : GenericActivity() {
 
     // MundoPhone: actualización integrada de Google Play (se registra antes de onCreate, como pide la API)
     private val appUpdateChecker = AppUpdateChecker(this)
+
+    // MundoPhone: el aviso de descarga de la actualización (AppUpdateChecker) va en la barra de avisos
+    @UiThread
+    fun showAppUpdateDownloading(step: Int) {
+        if (::viewModel.isInitialized) viewModel.showAppUpdateDownloading(step)
+    }
+
+    @UiThread
+    fun hideAppUpdateDownloading() {
+        if (::viewModel.isInitialized) viewModel.hideAppUpdateDownloading()
+    }
 
     private var currentlyDisplayedAuthDialog: Dialog? = null
 
@@ -293,6 +306,13 @@ class MainActivity : GenericActivity() {
                     Log.e("$TAG Notifications can't be enabled from here, going to the app notification settings")
                     goToNotificationSettings()
                 }
+            }
+        }
+
+        // MundoPhone: cómo dejar que Android despierte la app con las llamadas (MundoPhoneSegundoPlano)
+        viewModel.showBackgroundGuideEvent.observe(this) {
+            it.consume { xiaomi ->
+                showBackgroundGuide(xiaomi)
             }
         }
 
@@ -579,6 +599,67 @@ class MainActivity : GenericActivity() {
         Log.i("$TAG Stored [$defaultFragmentId] as default page")
 
         super.onPause()
+    }
+
+    /**
+     * MundoPhone: cómo dejar que Android despierte la app con las llamadas (MundoPhoneSegundoPlano). Desde la barra de aviso
+     * y, en Xiaomi, desde Ayuda (aunque se pulsara «Ya está»).
+     */
+    @UiThread
+    fun showBackgroundGuide(xiaomi: Boolean) {
+        val builder = AlertDialog.Builder(this).setTitle(R.string.background_guide_title)
+        if (xiaomi) {
+            // Cada paso con su estado: ✓ lo que ya está, la instrucción lo que falta y «compruébalo» lo que no se
+            // puede saber. Un botón por ajuste que falta: «Inicio automático» no está en la información de la app
+            // en HyperOS. Al arreglarlo, el aviso se va solo al volver; «Ya está» queda siempre por si la lectura
+            // de «Inicio automático» (no oficial) se equivoca.
+            val estado = MundoPhoneSegundoPlano.estado(this)
+            val bateriaMal = estado.bateriaOptimizada || estado.segundoPlanoRestringido || estado.grupoRestringido
+            val pasos = listOf(
+                getString(R.string.background_guide_xiaomi_intro),
+                getString(
+                    when (estado.inicioAutomatico) {
+                        true -> R.string.background_guide_autostart_ok
+                        false -> R.string.background_guide_autostart_todo
+                        null -> R.string.background_guide_autostart_check
+                    }
+                ),
+                getString(if (bateriaMal) R.string.background_guide_battery_todo else R.string.background_guide_battery_ok),
+                getString(R.string.background_guide_lock)
+            )
+            builder.setMessage(pasos.joinToString("\n\n"))
+            if (estado.inicioAutomatico != true) {
+                builder.setPositiveButton(R.string.background_guide_autostart) { _, _ ->
+                    MundoPhoneSegundoPlano.abrirInicioAutomatico(this)
+                }
+            }
+            if (bateriaMal) {
+                builder.setNegativeButton(R.string.background_guide_battery) { _, _ ->
+                    MundoPhoneSegundoPlano.abrirAjustes(this)
+                }
+            }
+            if (estado.inicioAutomatico == true && !bateriaMal) {
+                builder.setNeutralButton(R.string.background_guide_ok, null)
+            } else {
+                // Siempre: la lectura de «Inicio automático» no es oficial y no puede dejar el aviso sin salida
+                val lectura = estado.inicioAutomatico?.toString() ?: "unknown"
+                builder.setNeutralButton(R.string.background_guide_done) { _, _ ->
+                    coreContext.postOnCoreThread {
+                        corePreferences.xiaomiBackgroundGuideDone = true
+                        corePreferences.xiaomiGuideDoneAutostart = lectura
+                        Log.i("$TAG Xiaomi guide marked as done by the user, autostart read as [$lectura]")
+                        coreContext.postOnMainThread { viewModel.updateMissingPermissionAlert() }
+                    }
+                }
+            }
+        } else {
+            builder.setMessage(R.string.background_guide_generic_message)
+            builder.setPositiveButton(R.string.background_guide_open_settings) { _, _ ->
+                MundoPhoneSegundoPlano.abrirAjustes(this)
+            }
+            builder.setNegativeButton(R.string.background_guide_later, null)
+        }
+        builder.show()
     }
 
     override fun onResume() {

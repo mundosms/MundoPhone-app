@@ -20,7 +20,6 @@
 import Foundation
 import SwiftUI
 import AVFoundation
-import CryptoKit
 import linphonesw
 
 // Posted when remote provisioning completes successfully.
@@ -59,6 +58,9 @@ class Coordinator: NSObject, AVCaptureMetadataOutputObjectsDelegate {
 	/// Key format is username@domain.
 	private var accountKeyCountsBeforeProvisioning: [String: Int]?
 	private var isProvisioningInProgress: Bool = false
+	/// MundoPhone: el QR en curso no es de MundoSMS (se lo dimos al SDK, como upstream): si falla, se dice eso y no un error
+	/// genérico. Visto el 21/11/2026: el lector leyó un QR de cartuchos de Canon y salió «error al aplicar la configuración».
+	private var foreignQr = false
 
 	private var lastResult: String = ""
 
@@ -117,14 +119,32 @@ class Coordinator: NSObject, AVCaptureMetadataOutputObjectsDelegate {
                         }
                     }
                 }
-            }, onConfiguringStatus: { (_: Core, status: ConfiguringState, message: String) in
+            }, onConfiguringStatus: { (core: Core, status: ConfiguringState, message: String) in
                 Log.info("\(Coordinator.TAG) Configuring state is [\(status)]")
+				if status != .Skipped {
+					// MundoPhone: el XML del QR (lleva la clave de su cuenta) no se queda en disco, y si no se pudo aplicar
+					// tampoco su file:// en la configuración, que el SDK volvería a intentar en cada arranque
+					if (core.provisioningUri ?? "").hasSuffix("/\(Coordinator.qrXmlFileName)") {
+						try? core.setProvisioninguri(newValue: nil)
+						// Al disco en el acto: el Core de iOS relee la configuración del disco al volver a arrancar
+						try? core.config?.sync()
+					}
+					try? FileManager.default.removeItem(at: Coordinator.qrXmlFile())
+				}
                 if status == .Failed {
 					self.isProvisioningInProgress = false
 					self.accountKeyCountsBeforeProvisioning = nil
                     Log.error("\(Coordinator.TAG) Failure applying remote provisioning: \(message)")
+					if self.foreignQr {
+						// El enlace de un QR ajeno que ha fallado no se queda para reintentarlo en cada arranque (se quedaba
+						// así uno de cartuchos de Canon)
+						try? core.setProvisioninguri(newValue: nil)
+						try? core.config?.sync()
+					}
+					let toast = self.foreignQr ? "QR_code_not_mundosms" : "Failed_remote_provisioning"
+					self.foreignQr = false
                     DispatchQueue.main.async {
-                        ToastViewModel.shared.toastMessage = "Failed_remote_provisioning"
+                        ToastViewModel.shared.toastMessage = toast
                         ToastViewModel.shared.displayToast = true
                         NotificationCenter.default.post(name: .qrCodeProvisioningError, object: nil)
                     }
@@ -177,48 +197,64 @@ class Coordinator: NSObject, AVCaptureMetadataOutputObjectsDelegate {
 
 		coreContext.doOnCoreQueue { core in
 			self.isProvisioningInProgress = true
+			self.foreignQr = false
 			self.accountKeyCountsBeforeProvisioning = self.extractAccountKeyCounts(core: core)
 
-			if result.trimmingCharacters(in: .whitespaces).hasPrefix("<config") {
-				self.handleXmlConfiguration(core: core, xmlConfig: result)
+			let payload = result.trimmingCharacters(in: .whitespacesAndNewlines)
+			// MundoPhone: el QR puede traer el XML entero (antes se le daba al SDK como URI y lo rechazaba)
+			if payload.hasPrefix("<config") || payload.hasPrefix("<?xml") {
+				self.applyXml(core: core, xml: payload)
 				return
 			}
 
-			let accountsJson = self.buildAccountsJson(core: core)
+			// MundoPhone (como en Android): el XML de la cuenta lo descarga la app, sin mandar nada de las que ya tiene
+			// (antes iban en la URL el usuario y el MD5 de la clave de todas). Primero se resuelve el enlace corto de
+			// urla.ws, también sin datos.
 			let url = Coordinator.upgradeToHttps(result)
-			// Sin cuentas no hay nada que proteger, y si el QR ya apunta a la API se usa tal cual
-			if core.accountList.isEmpty || Coordinator.isProvisioningUrl(url) {
-				self.handleUrlConfiguration(core: core, url: Coordinator.appendAccounts(url, accountsJson))
-				return
-			}
-
-			// MundoPhone (como en Android): el QR del panel es un enlace corto de urla.ws. Añadirle el login y el MD5 de
-			// la clave de TODAS las cuentas los dejaría en el registro del acortador, así que se resuelve primero SIN
-			// datos y solo se añaden a la URL final si es https://api.mundosms.es. Si no se llega
-			// ahí, error: aprovisionar sin las cuentas que ya hay podría pisarlas.
 			DispatchQueue.global(qos: .userInitiated).async {
-				let finalUrl = Coordinator.resolveRedirects(url)
-				self.coreContext.doOnCoreQueue { core in
-					if let finalUrl = finalUrl {
-						self.handleUrlConfiguration(core: core, url: Coordinator.appendAccounts(finalUrl, accountsJson))
-					} else {
-						self.isProvisioningInProgress = false
-						self.accountKeyCountsBeforeProvisioning = nil
-						Log.error("\(Coordinator.TAG) QR link didn't lead to https://\(Coordinator.provisioningHost), existing accounts haven't been sent")
-						DispatchQueue.main.async {
-							ToastViewModel.shared.toastMessage = "QR_code_invalid"
-							ToastViewModel.shared.displayToast = true
-							NotificationCenter.default.post(name: .qrCodeProvisioningError, object: nil)
+				guard let finalUrl = Coordinator.resolveRedirects(url) else {
+					self.coreContext.doOnCoreQueue { core in
+						let nuestro = Coordinator.isMundoSmsLink(url)
+						if core.accountList.isEmpty {
+							// Un QR que no es del panel (otro proveedor): sin cuentas que pisar, lo aplica el SDK, como upstream
+							Log.warn("\(Coordinator.TAG) QR link didn't lead to https://\(Coordinator.provisioningHost), letting the SDK apply it (MundoSMS link [\(nuestro)])")
+							self.foreignQr = !nuestro
+							self.handleUrlConfiguration(core: core, url: url)
+						} else {
+							Log.error("\(Coordinator.TAG) QR link didn't lead to https://\(Coordinator.provisioningHost), existing accounts could be overwritten (MundoSMS link [\(nuestro)])")
+							self.provisioningFailed(toast: nuestro ? "QR_code_invalid" : "QR_code_not_mundosms")
 						}
+					}
+					return
+				}
+				switch Coordinator.downloadXml(finalUrl) {
+				case .xml(let xml):
+					self.coreContext.doOnCoreQueue { core in
+						self.applyXml(core: core, xml: xml)
+					}
+				case .failed(let toast):
+					self.coreContext.doOnCoreQueue { _ in
+						self.provisioningFailed(toast: toast)
 					}
 				}
 			}
 		}
 	}
 
+	/// Error al aprovisionar desde el QR: se avisa y se vuelve al lector. En la cola del Core.
+	private func provisioningFailed(toast: String) {
+		isProvisioningInProgress = false
+		accountKeyCountsBeforeProvisioning = nil
+		DispatchQueue.main.async {
+			ToastViewModel.shared.toastMessage = toast
+			ToastViewModel.shared.displayToast = true
+			NotificationCenter.default.post(name: .qrCodeProvisioningError, object: nil)
+		}
+	}
+
 	// MARK: - QR link (MundoPhone)
 
-	/// Único destino al que se mandan los datos de las cuentas que ya hay (login + MD5 de la clave): la API del panel.
+	/// La API del panel, por https: de ahí la app descarga el XML de la cuenta (MundoPhoneAprovisionamiento).
 	static let provisioningHost = "api.mundosms.es"
 	private static let maxRedirects = 5
 
@@ -231,17 +267,16 @@ class Coordinator: NSObject, AVCaptureMetadataOutputObjectsDelegate {
 		return u.scheme?.lowercased() == "https" && u.host?.lowercased() == provisioningHost
 	}
 
+	/// Un enlace del panel: a mundosms.es o al acortador (urla.ws). Solo decide el aviso cuando el enlace no lleva a la API
+	/// (sin red, el del panel sigue diciendo «no válido»; uno ajeno, «no es de MundoSMS»).
+	static func isMundoSmsLink(_ url: String) -> Bool {
+		guard let host = URL(string: url)?.host?.lowercased() else { return false }
+		return host == "mundosms.es" || host.hasSuffix(".mundosms.es") || host == "urla.ws" || host.hasSuffix(".urla.ws")
+	}
+
 	/// urla.ws sirve http y https; iOS (ATS) no deja ir por http
 	static func upgradeToHttps(_ url: String) -> String {
 		return url.replacingOccurrences(of: "^http://", with: "https://", options: [.regularExpression, .caseInsensitive])
-	}
-
-	static func appendAccounts(_ url: String, _ accountsJson: String) -> String {
-		var allowed = CharacterSet.alphanumerics
-		allowed.insert(charactersIn: "-._~")
-		let encoded = accountsJson.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
-		let separator = url.contains("?") ? "&" : "?"
-		return "\(url)\(separator)source=linphonexml&jsonaddaccounts=\(encoded)"
 	}
 
 	private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
@@ -288,42 +323,6 @@ class Coordinator: NSObject, AVCaptureMetadataOutputObjectsDelegate {
 			current = upgradeToHttps(nextUrl.absoluteString)
 		}
 		return isProvisioningUrl(current) ? current : nil
-	}
-	
-	// MARK: - Account JSON Builder
-	
-	private func buildAccountsJson(core: Core) -> String {
-		var accountsArray: [[String: String]] = []
-		
-		for account in core.accountList {
-			guard let params = account.params,
-				  let identity = params.identityAddress?.username else {
-				continue
-			}
-			
-			var password = ""
-			if let authInfo = account.findAuthInfo() {
-				password = authInfo.password ?? ""
-				Log.info("\(Coordinator.TAG) Found auth info for username [\(authInfo.username ?? "")]")
-			} else {
-				Log.warn("\(Coordinator.TAG) Failed to find auth info for account [\(params.identityAddress?.asStringUriOnly() ?? "")]")
-			}
-			
-			accountsArray.append([
-				"login": identity,
-				"md5pass": calculateMD5Hash(input: password)
-			])
-		}
-		
-		let jsonObject: [String: Any] = ["accounts": accountsArray]
-		if let data = try? JSONSerialization.data(withJSONObject: jsonObject),
-		   let jsonString = String(data: data, encoding: .utf8) {
-			// MundoPhone: sin el JSON en el registro (lleva el MD5 de las claves, y el registro acaba en Crashlytics)
-			Log.info("\(Coordinator.TAG) Built accounts JSON for [\(accountsArray.count)] account(s)")
-			return jsonString
-		}
-		
-		return "{\"accounts\":[]}"
 	}
 	
 	// MARK: - Account Key Helpers
@@ -392,36 +391,144 @@ class Coordinator: NSObject, AVCaptureMetadataOutputObjectsDelegate {
 		}
 	}
 	
-	// MARK: - MD5 Hashing
-	
-	private func calculateMD5Hash(input: String) -> String {
-		let digest = Insecure.MD5.hash(data: Data(input.utf8))
-		return digest.map { String(format: "%02x", $0) }.joined()
+	// MARK: - XML de la cuenta (MundoPhone)
+
+	enum Descarga {
+		case xml(String)
+		/// El aviso que toca (ToastView): caducado, ya usado o el genérico
+		case failed(toast: String)
 	}
-	
-	// MARK: - XML Configuration Handler
-	
-	private func handleXmlConfiguration(core: Core, xmlConfig: String) {
-		Log.info("\(Coordinator.TAG) Processing XML configuration from QR")
+
+	/// El XML de la cuenta del QR. Los campos del enlace (con la firma) van en el cuerpo de un POST, que no queda en ningún
+	/// registro de URLs; en la URL, para el registro del panel (nginx), que no los usa ni los firma: source, la app, su
+	/// versión y la extensión (x). Nada de las cuentas que ya tiene la app. El panel contesta con un JSON de error si el
+	/// enlace ha caducado, no es válido o la extensión no existe: su «message» va al registro. Bloquea: llamarla fuera del
+	/// hilo principal y del Core.
+	static func downloadXml(_ url: String) -> Descarga {
+		let info = Bundle.main.infoDictionary
+		let version = "\(info?["CFBundleShortVersionString"] as? String ?? "")-\(info?["CFBundleVersion"] as? String ?? "")"
+		let extra = [("source", "linphonexml"), ("app", "MundoPhone-iOS"), ("ver", version)]
+		let post = MundoPhoneAprovisionamiento.peticionPost(enlace: url, extra: extra)
+		var respuesta = request(post)
+		// Transición: el panel acepta el POST desde una entrega reciente. Hasta que esté subida
+		// solo lee el enlace de la URL y contesta que le faltan campos o que no es válido: entonces, una vez, como antes.
+		// Quitar cuando la entrega lleve tiempo en producción.
+		if post.cuerpo != nil, respuesta?.xml == nil,
+		   let m = respuesta?.message, m.range(of: "not valid", options: .caseInsensitive) != nil || m.range(of: "missing", options: .caseInsensitive) != nil {
+			Log.warn("\(TAG) Panel didn't take the link by POST [\(m)], trying again by GET")
+			respuesta = request(MundoPhoneAprovisionamiento.peticionGet(enlace: url, extra: extra))
+		}
+		guard let r = respuesta else { return .failed(toast: "Failed_remote_provisioning") }
+		if let xml = r.xml {
+			Log.info("\(TAG) QR code configuration downloaded from [\(hostOf(url))], [\(r.bytes)] bytes")
+			return .xml(xml)
+		}
+		Log.error("\(TAG) QR code configuration not downloaded: HTTP [\(r.code)], [\(r.bytes)] bytes, message [\(r.message)]")
+		if r.message.range(of: "expired", options: .caseInsensitive) != nil { return .failed(toast: "QR_code_expired") }
+		// El panel gasta el enlace al entregar la configuración (un solo uso, con unos minutos de margen)
+		if r.message.range(of: "already used", options: .caseInsensitive) != nil { return .failed(toast: "QR_code_used") }
+		return .failed(toast: "Failed_remote_provisioning")
+	}
+
+	private struct Respuesta {
+		let code: Int
+		let bytes: Int
+		let xml: String?
+		let message: String
+	}
+
+	/// Una petición al panel; nil si ni siquiera se pudo hacer (ya registrado). Bloquea.
+	private static func request(_ peticion: MundoPhoneAprovisionamiento.Peticion) -> Respuesta? {
+		guard let target = URL(string: peticion.url) else { return nil }
+		var req = URLRequest(url: target, timeoutInterval: 8)
+		if let cuerpo = peticion.cuerpo {
+			req.httpMethod = "POST"
+			req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+			req.httpBody = Data(cuerpo.utf8)
+		}
+		let session = URLSession(configuration: .ephemeral, delegate: NoRedirectDelegate(), delegateQueue: nil)
+		defer { session.invalidateAndCancel() }
+		let semaphore = DispatchSemaphore(value: 0)
+		var response: HTTPURLResponse?
+		var body: Data?
+		var failure: Error?
+		session.dataTask(with: req) { data, resp, error in
+			body = data
+			response = resp as? HTTPURLResponse
+			failure = error
+			semaphore.signal()
+		}.resume()
+		_ = semaphore.wait(timeout: .now() + 10)
+		guard let http = response, let data = body else {
+			Log.error("\(TAG) Failed to download QR code configuration from [\(hostOf(peticion.url))]: \(failure.map { String(describing: type(of: $0)) } ?? "timeout")")
+			return nil
+		}
+		var text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+		if text.hasPrefix("\u{FEFF}") {
+			text = String(text.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
+		}
+		if (200...299).contains(http.statusCode) && data.count <= MundoPhoneAprovisionamiento.maxBytes &&
+			(text.hasPrefix("<config") || text.hasPrefix("<?xml")) {
+			return Respuesta(code: http.statusCode, bytes: data.count, xml: text, message: "")
+		}
+		let message = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["message"] as? String ?? ""
+		return Respuesta(code: http.statusCode, bytes: data.count, xml: nil, message: String(message.prefix(80)))
+	}
+
+	static let qrXmlFileName = "mundophone-qr.xml"
+
+	static func qrXmlFile() -> URL {
+		return FileManager.default.temporaryDirectory.appendingPathComponent(qrXmlFileName)
+	}
+
+	/// Añade la cuenta del XML sin tocar las demás: con el Core parado (al parar, el SDK reescribe sus cuentas en la
+	/// configuración), se renumera contra lo que hay y se le da al SDK como file://, que lo aplica al arrancar y antes de
+	/// leer las cuentas (MundoPhoneAprovisionamiento).
+	private func applyXml(core: Core, xml: String) {
+		// MundoPhone: el mismo QR otra vez (la misma cuenta, con la misma contraseña) no reinicia el Core: no hay nada que
+		// aplicar, y en Android varios reinicios seguidos tumbaron la app dentro del SDK (21/11/2026, ver sinCambios)
+		if let config = core.config,
+		   MundoPhoneAprovisionamiento.sinCambios(xml: xml, existentes: MundoPhoneAprovisionamiento.leerExistentes(config: config)) {
+			Log.info("\(Coordinator.TAG) QR code account is already configured with the same password, nothing to apply")
+			isProvisioningInProgress = false
+			accountKeyCountsBeforeProvisioning = nil
+			DispatchQueue.main.async {
+				ToastViewModel.shared.toastMessage = "Success_qr_code_already_configured"
+				ToastViewModel.shared.displayToast = true
+				NotificationCenter.default.post(name: .qrCodeProvisioningSuccess, object: true)
+			}
+			return
+		}
+		Log.info("\(Coordinator.TAG) Adding the QR code account, restarting the Core to apply it")
+		core.stop()
 		do {
-			try core.setProvisioninguri(newValue: xmlConfig)
-			Log.info("\(Coordinator.TAG) Setting provisioning URI with XML content: \(String(xmlConfig.prefix(100)))...")
-			core.stop()
+			guard let config = core.config as Config? else {
+				throw MundoPhoneAprovisionamiento.XmlNoValido(description: "no config")
+			}
+			let existing = MundoPhoneAprovisionamiento.leerExistentes(config: config)
+			let result = try MundoPhoneAprovisionamiento.reescribir(xml: xml, existentes: existing)
+			let file = Coordinator.qrXmlFile()
+			try result.xml.write(to: file, atomically: true, encoding: .utf8)
+			try core.setProvisioninguri(newValue: "file://\(file.path)")
+			// Al disco ANTES de arrancar: con el Core parado, start() vuelve a leer la configuración del disco («Reading config
+			// information from …/linphonerc») y lo que solo estaba en memoria se pierde. Sin esto el SDK no veía el file:// y no
+			// aplicaba la cuenta del QR; en un iPhone con una URI vieja guardada (un QR de Canon) aplicaba esa
+			// (visto en iOS 27.2.1).
+			try config.sync()
+			Log.info("\(Coordinator.TAG) QR code configuration ready: [\(result.nuevas)] new account(s), [\(result.actualizadas)] updated, [\(existing.cuentas.count)] already there")
+		} catch {
+			Log.error("\(Coordinator.TAG) Invalid QR code configuration: \(error)")
+			provisioningFailed(toast: "Failed_remote_provisioning")
+		}
+		do {
 			Log.info("\(Coordinator.TAG) Core has been stopped, restarting it")
 			try core.start()
 			Log.info("\(Coordinator.TAG) Core has been restarted")
 		} catch {
-			isProvisioningInProgress = false
-			accountKeyCountsBeforeProvisioning = nil
-			Log.error("\(Coordinator.TAG) Error processing XML configuration: \(error)")
-			DispatchQueue.main.async {
-				ToastViewModel.shared.toastMessage = "QR_code_invalid"
-				ToastViewModel.shared.displayToast = true
-				NotificationCenter.default.post(name: .qrCodeProvisioningError, object: nil)
-			}
+			Log.error("\(Coordinator.TAG) Error restarting the Core: \(error)")
 		}
 	}
-	
+
 	// MARK: - URL Configuration Handler
 	
 	private func handleUrlConfiguration(core: Core, url: String) {

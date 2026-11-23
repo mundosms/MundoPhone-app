@@ -56,6 +56,12 @@
 "assistant_permissions_skip_permissions" = "Provést později";
 "assistant_permissions_title" = "Udělit oprávnění";
 "assistant_qr_code_invalid_toast" = "Neplatný QR kód!";
+"assistant_qr_code_expired_toast" = "The QR code has expired: generate a new one from the panel";
+"assistant_qr_code_used_toast" = "This QR code has already been used: generate a new one from the panel";
+"assistant_qr_code_not_mundosms_toast" = "This QR code isn't from MundoSMS: scan the one in SIP Lines on the panel";
+"assistant_qr_code_already_configured_toast" = "This extension is already set up";
+"assistant_qr_camera_denied" = "MundoPhone isn't allowed to use the camera. Turn it on in Settings, or pick a photo of the QR code with the gallery button.";
+"assistant_qr_open_settings" = "Open Settings";
 "assistant_duplicate_account_toast" = "Tento účet je již nakonfigurován a nelze jej přidat dvakrát";
 "assistant_remote_provisioning_failed_toast" = "Nepodařilo se použít vzdálenou konfiguraci";
 "assistant_scan_qr_code" = "Naskenovat QR kód";

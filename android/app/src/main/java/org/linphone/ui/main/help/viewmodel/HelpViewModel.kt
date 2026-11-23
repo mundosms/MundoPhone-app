@@ -37,6 +37,7 @@ import org.linphone.core.Factory
 import org.linphone.core.MundoPhonePushToken
 import org.linphone.core.SupportLogsUpload
 import org.linphone.core.VersionUpdateCheckResult
+import org.linphone.core.MundoPhoneSegundoPlano
 import org.linphone.core.tools.Log
 import org.linphone.ui.GenericViewModel
 import org.linphone.utils.AppUtils
@@ -286,7 +287,10 @@ class HelpViewModel
     fun uploadLogsToSupport(description: String, contact: String, callHeader: String? = null) {
         coreContext.postOnCoreThread { core ->
             val accounts = core.accountList.mapNotNull { it.params.identityAddress?.username }.joinToString(",")
-            val device = "${Build.MANUFACTURER} ${Build.MODEL} / Android ${Build.VERSION.RELEASE}"
+            // En Xiaomi, además, la capa (HyperOS/MIUI) y la lectura de «Inicio automático», para saber con el tiempo en
+            // qué modelos y versiones se puede leer (MundoPhoneSegundoPlano.resumenParaSoporte)
+            val device = "${Build.MANUFACTURER} ${Build.MODEL} / Android ${Build.VERSION.RELEASE}" +
+                MundoPhoneSegundoPlano.resumenParaSoporte(coreContext.context)
             val text = listOfNotNull(callHeader, description.ifEmpty { null }).joinToString("\n")
             val url = corePreferences.logsUploadUrl +
                 "?d=" + queryValue(text) +

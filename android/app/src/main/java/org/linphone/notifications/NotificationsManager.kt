@@ -215,10 +215,26 @@ class NotificationsManager
             Log.i("$TAG Call state changed: [$currentState]")
             when (currentState) {
                 Call.State.IncomingReceived, Call.State.IncomingEarlyMedia -> {
-                    Log.i(
-                        "$TAG Showing incoming call notification for [${call.remoteAddress.asStringUriOnly()}]"
-                    )
-                    showCallNotification(call, true)
+                    if (corePreferences.autoAnswerEnabled && corePreferences.autoAnswerDelay == 0) {
+                        Log.i(
+                            "$TAG Showing incoming call notification for [${call.remoteAddress.asStringUriOnly()}]"
+                        )
+                        showCallNotification(call, true)
+                    } else {
+                        // MundoPhone: detrás del tono, que el SDK acaba de encolar en este hilo (ver TelecomManager): montar
+                        // la notificación (contacto, avatar, PendingIntent) lo retrasaba. Si la llamada se va mientras,
+                        // nada: si no, quedaría la notificación de una entrante que ya no existe.
+                        coreContext.postOnCoreThread {
+                            if (LinphoneUtils.isCallIncoming(call.state)) {
+                                Log.i(
+                                    "$TAG Showing incoming call notification for [${call.remoteAddress.asStringUriOnly()}]"
+                                )
+                                showCallNotification(call, true)
+                            } else {
+                                Log.w("$TAG Call isn't incoming anymore [${call.state}], no incoming call notification")
+                            }
+                        }
+                    }
                 }
                 Call.State.OutgoingInit -> {
                     Log.i(

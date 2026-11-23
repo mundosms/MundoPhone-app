@@ -168,13 +168,21 @@ object MundoPhoneTiempos {
         val phase = incoming ?: startIncoming(now, cold(now, "arranque en frío sin push", "sin push"))
         if (!phase.has(name)) addMark(phase, name, now, log = false)
 
-        if (state == Call.State.IncomingReceived) {
-            // El SDK arranca el tono en un post al hilo del Core desde su propio listener (AndroidPlatformHelper). Dos
-            // posts seguidos aseguran que esta marca va detrás, se haya llamado antes a ese listener o a este.
-            coreContext.postOnCoreThread {
-                coreContext.postOnCoreThread {
-                    ring()
-                }
+        // La marca del tono la pone ringListener (ver ahí)
+    }
+
+    /**
+     * La marca «timbre», justo detrás del tono. El SDK lo encola en el hilo del Core desde su listener
+     * (AndroidPlatformHelper.startRinging), que registra al arrancar el Core; Telecom y la notificación, que registran
+     * los suyos después (CoreContext.onCoreStarted), encolan su trabajo detrás del tono. Este listener se registra en
+     * onCoreStarted ANTES que ellos: su post queda entre el tono y ese trabajo. Antes eran dos posts seguidos, que con
+     * Telecom y la notificación encolados también quedaban detrás de ellos: la marca llegaba 60-75 ms tarde.
+     */
+    val ringListener = object : CoreListenerStub() {
+        @WorkerThread
+        override fun onCallStateChanged(core: Core, call: Call, state: Call.State?, message: String) {
+            if (state == Call.State.IncomingReceived) {
+                coreContext.postOnCoreThread { ring() }
             }
         }
     }

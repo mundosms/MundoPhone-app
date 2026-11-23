@@ -45,6 +45,7 @@ import org.linphone.core.LogCollectionState
 import org.linphone.core.LogLevel
 import org.linphone.core.MundoPhoneDns
 import org.linphone.core.MundoPhoneMigrations
+import org.linphone.core.MundoPhoneSegundoPlano
 import org.linphone.core.MundoPhoneTiempos
 import org.linphone.core.VFS
 import org.linphone.core.tools.Log
@@ -76,6 +77,10 @@ class LinphoneApplication : Application(), SingletonImageLoader.Factory {
         )
         wakeLock.acquire(20000L) // 20 seconds
 
+        // MundoPhone: la primera llamada a Factory.instance() carga las librerías nativas del SDK (liblinphone, mediastreamer)
+        val nativeStart = SystemClock.elapsedRealtime()
+        Factory.instance()
+        val nativeMs = SystemClock.elapsedRealtime() - nativeStart
         Factory.instance().setLogCollectionPath(context.filesDir.absolutePath)
         Factory.instance().enableLogCollection(LogCollectionState.Enabled)
         // For VFS
@@ -97,6 +102,7 @@ class LinphoneApplication : Application(), SingletonImageLoader.Factory {
         corePreferences.config = config
         // MundoPhone: push, TCP y puerto de nuestras cuentas, antes de que el Core lea la configuración
         MundoPhoneMigrations.beforeCoreStart(config)
+        MundoPhoneMigrations.dbSchemaBeforeCoreStart(config, MundoPhoneMigrations.dbSchemaBuild(context))
         // MundoPhone: la IP del borde en un fichero de hosts para belle-sip (sin esperar al DNS en el arranque por push)
         MundoPhoneDns.prepare(context, config)
 
@@ -108,7 +114,7 @@ class LinphoneApplication : Application(), SingletonImageLoader.Factory {
         Log.i("$TAG Report Core preferences initialized")
         Log.i(
             "$TAG MundoPhone startup: process start to onCreate [${onCreateStart - Process.getStartElapsedRealtime()}] ms, " +
-                "onCreate until logs [${SystemClock.elapsedRealtime() - onCreateStart}] ms (VFS check [$vfsMs] ms)"
+                "onCreate until logs [${SystemClock.elapsedRealtime() - onCreateStart}] ms (native libraries [$nativeMs] ms, VFS check [$vfsMs] ms)"
         )
         // MundoPhone (F4): las mismas dos horas, para el resumen de la fase «entrante» si este arranque es por un push
         MundoPhoneTiempos.processStarted(onCreateStart)
@@ -116,6 +122,19 @@ class LinphoneApplication : Application(), SingletonImageLoader.Factory {
 
         coreContext = CoreContext(context)
         coreContext.start()
+        // MundoPhone: después de arrancar el hilo del Core (antes, al construir TelecomManager: 32-39 ms medidos delante del
+        // Core en un arranque por push). Telecom no hace falta hasta dar de alta la primera llamada.
+        coreContext.telecomManager.registerWithTelecom()
+        // MundoPhone: por qué cerró Android la app antes y qué le deja hacer en segundo plano, para el registro; unos
+        // segundos después y en su hilo, fuera del camino del push
+        Thread({
+            try {
+                Thread.sleep(5000)
+            } catch (_: InterruptedException) {
+                return@Thread
+            }
+            MundoPhoneSegundoPlano.registrar(context)
+        }, "MundoPhone background state").apply { priority = Thread.MIN_PRIORITY }.start()
 
         DynamicColors.applyToActivitiesIfAvailable(this)
         Log.i("$TAG MundoPhone startup: onCreate took [${SystemClock.elapsedRealtime() - onCreateStart}] ms")

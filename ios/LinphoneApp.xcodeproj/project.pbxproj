@@ -155,6 +155,7 @@
 		D79F1C162CD3D6AD00FF0A05 /* ConversationInfoFragment.swift in Sources */ = {isa = PBXBuildFile; fileRef = D79F1C152CD3D6AD00FF0A05 /* ConversationInfoFragment.swift */; };
 		D79F2D0A2C47F4BF0038FA07 /* TouchFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = D79F2D092C47F4BF0038FA07 /* TouchFeedback.swift */; };
 		80DFCF9CC3C7849CEDD097E1 /* MarcadorT9.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19B6B1BC061B02AA60A55DFB /* MarcadorT9.swift */; };
+		CF5C8A436F4B2D13BAC0A271 /* MundoPhoneAprovisionamiento.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CC1900CB38E80BC84FCE21C /* MundoPhoneAprovisionamiento.swift */; };
 		7111346A102A685C72591744 /* MarcadorTecla.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23076A261DF6E99032177B47 /* MarcadorTecla.swift */; };
 		D7A03FBD2ACC2DB60081A588 /* ContactsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A03FBC2ACC2DB60081A588 /* ContactsView.swift */; };
 		D7A03FC02ACC2E390081A588 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A03FBF2ACC2E390081A588 /* HistoryView.swift */; };
@@ -391,6 +392,7 @@
 		D79F1C152CD3D6AD00FF0A05 /* ConversationInfoFragment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationInfoFragment.swift; sourceTree = "<group>"; };
 		D79F2D092C47F4BF0038FA07 /* TouchFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchFeedback.swift; sourceTree = "<group>"; };
 		19B6B1BC061B02AA60A55DFB /* MarcadorT9.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarcadorT9.swift; sourceTree = "<group>"; };
+		0CC1900CB38E80BC84FCE21C /* MundoPhoneAprovisionamiento.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MundoPhoneAprovisionamiento.swift; sourceTree = "<group>"; };
 		23076A261DF6E99032177B47 /* MarcadorTecla.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarcadorTecla.swift; sourceTree = "<group>"; };
 		D7A03FBC2ACC2DB60081A588 /* ContactsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsView.swift; sourceTree = "<group>"; };
 		D7A03FBF2ACC2E390081A588 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
@@ -629,6 +631,7 @@
 				C6A5A9462C10B64A0070FEA4 /* SingleSignOn */,
 				D79F2D092C47F4BF0038FA07 /* TouchFeedback.swift */,
 				19B6B1BC061B02AA60A55DFB /* MarcadorT9.swift */,
+				0CC1900CB38E80BC84FCE21C /* MundoPhoneAprovisionamiento.swift */,
 				23076A261DF6E99032177B47 /* MarcadorTecla.swift */,
 			);
 			path = Utils;
@@ -1385,6 +1388,7 @@
 				D76005F62B0798B00054B79A /* IntExtension.swift in Sources */,
 				D79F2D0A2C47F4BF0038FA07 /* TouchFeedback.swift in Sources */,
 				80DFCF9CC3C7849CEDD097E1 /* MarcadorT9.swift in Sources */,
+				CF5C8A436F4B2D13BAC0A271 /* MundoPhoneAprovisionamiento.swift in Sources */,
 				7111346A102A685C72591744 /* MarcadorTecla.swift in Sources */,
 				D78E06282BE3811D00CE3783 /* CallStatsModel.swift in Sources */,
 				D7E6D0512AEBDBD500A57AAF /* ContactsListBottomSheet.swift in Sources */,
@@ -1522,7 +1526,7 @@
 				CODE_SIGN_ENTITLEMENTS = msgNotificationService/msgNotificationService.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 11;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_PREPROCESSOR_DEFINITIONS = (
@@ -1541,7 +1545,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 2.3.1;
+				MARKETING_VERSION = 2.3.2;
 				OTHER_SWIFT_FLAGS = "$(inherited) -DUSE_CRASHLYTICS";
 				PRODUCT_BUNDLE_IDENTIFIER = es.mundosms.phone.msgNotificationService;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1564,7 +1568,7 @@
 				CODE_SIGN_ENTITLEMENTS = msgNotificationService/msgNotificationService.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 11;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_PREPROCESSOR_DEFINITIONS = (
@@ -1582,7 +1586,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 2.3.1;
+				MARKETING_VERSION = 2.3.2;
 				OTHER_SWIFT_FLAGS = "$(inherited) -DUSE_CRASHLYTICS";
 				PRODUCT_BUNDLE_IDENTIFIER = es.mundosms.phone.msgNotificationService;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1732,7 +1736,7 @@
 					LiveCommunicationKit,
 				);
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 11;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_ASSET_PATHS = "\"Linphone/Preview Content\"";
@@ -1775,7 +1779,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 13.3;
-				MARKETING_VERSION = 2.3.1;
+				MARKETING_VERSION = 2.3.2;
 				OTHER_SWIFT_FLAGS = "$(inherited) -DUSE_CRASHLYTICS";
 				PRODUCT_BUNDLE_IDENTIFIER = es.mundosms.phone;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1800,7 +1804,7 @@
 					LiveCommunicationKit,
 				);
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 11;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Linphone/Preview Content\"";
 				ENABLE_APP_SANDBOX = YES;
@@ -1841,7 +1845,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 13.3;
-				MARKETING_VERSION = 2.3.1;
+				MARKETING_VERSION = 2.3.2;
 				OTHER_SWIFT_FLAGS = "$(inherited) -DUSE_CRASHLYTICS";
 				PRODUCT_BUNDLE_IDENTIFIER = es.mundosms.phone;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1860,7 +1864,7 @@
 				CODE_SIGN_ENTITLEMENTS = linphoneExtension/linphoneExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 11;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1874,7 +1878,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 2.3.1;
+				MARKETING_VERSION = 2.3.2;
 				PRODUCT_BUNDLE_IDENTIFIER = es.mundosms.phone.linphoneExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -1893,7 +1897,7 @@
 				CODE_SIGN_ENTITLEMENTS = linphoneExtension/linphoneExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 11;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1907,7 +1911,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 2.3.1;
+				MARKETING_VERSION = 2.3.2;
 				PRODUCT_BUNDLE_IDENTIFIER = es.mundosms.phone.linphoneExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;

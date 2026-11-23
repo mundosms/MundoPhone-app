@@ -87,6 +87,12 @@
 "assistant_permissions_subtitle" = "Pour vous permettre de profiter pleinement de %@, nous avons besoin des autorisations suivantes :";
 "assistant_permissions_title" = "Donner les permissions";
 "assistant_qr_code_invalid_toast" = "Ce QR code est invalide !";
+"assistant_qr_code_expired_toast" = "The QR code has expired: generate a new one from the panel";
+"assistant_qr_code_used_toast" = "This QR code has already been used: generate a new one from the panel";
+"assistant_qr_code_not_mundosms_toast" = "This QR code isn't from MundoSMS: scan the one in SIP Lines on the panel";
+"assistant_qr_code_already_configured_toast" = "This extension is already set up";
+"assistant_qr_camera_denied" = "MundoPhone isn't allowed to use the camera. Turn it on in Settings, or pick a photo of the QR code with the gallery button.";
+"assistant_qr_open_settings" = "Open Settings";
 "assistant_duplicate_account_toast" = "Ce compte est déjà configuré et ne peut pas être ajouté deux fois";
 "assistant_remote_provisioning_failed_toast" = "Échec de l'application de la configuration distante";
 "assistant_scan_qr_code" = "Scanner un QR code";

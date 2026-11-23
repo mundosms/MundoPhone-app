@@ -40,7 +40,8 @@ import org.linphone.core.tools.Log
  *   upload to …», «Unexpected HTTP response code … during log collection upload to …», linphonecore.c). Los errores no
  *   se tapan, para no quedarse ciego justo cuando algo va mal.
  * Y antes de subir, el registro recibe la configuración de la app sin secretos (SupportLogsConfig): líneas
- * «[Configuración] …» al final del fichero, justo antes de «Uploading logs».
+ * «[Configuración] …» al final del fichero, justo antes de «Uploading logs», y el estado de segundo plano
+ * (MundoPhoneSegundoPlano.registrar).
  */
 object SupportLogsUpload {
     private const val TAG = "[Support Logs Upload]"
@@ -89,6 +90,9 @@ object SupportLogsUpload {
         // escribiría. Cada línea llega al fichero de la colección en el momento (fprintf + fflush, linphonecore.c) y
         // uploadLogCollection comprime ese fichero en esta misma llamada, antes de mandar nada: va en lo que se sube
         for (line in SupportLogsConfig.logLines(core.config.dump())) Log.i(line)
+        // Y lo que Android deja hacer a la app en segundo plano, en cualquier marca: el del arranque puede haber salido ya
+        // de los ficheros si la app lleva días abierta
+        MundoPhoneSegundoPlano.registrar(coreContext.context)
 
         val loggingService = Factory.instance().loggingService
         savedLogMask = loggingService.logLevelMask

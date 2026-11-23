@@ -18,6 +18,7 @@
  */
 package org.linphone.ui.main
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -53,5 +54,18 @@ class UpdatePromptPolicyTest {
         assertFalse(UpdatePromptPolicy.countsAsDeclined(UpdatePromptPolicy.ACCIDENTAL_MS - 1))
         assertTrue(UpdatePromptPolicy.countsAsDeclined(UpdatePromptPolicy.ACCIDENTAL_MS))
         assertTrue(UpdatePromptPolicy.countsAsDeclined(2500L))
+    }
+
+    @Test
+    fun `el aviso de descarga va de 10 en 10 y nunca dice 100`() {
+        assertEquals(-1, UpdatePromptPolicy.downloadStep(0L, 0L)) // Play aún no sabe el tamaño
+        assertEquals(-1, UpdatePromptPolicy.downloadStep(5L, -1L))
+        assertEquals(0, UpdatePromptPolicy.downloadStep(0L, 52_000_000L))
+        assertEquals(0, UpdatePromptPolicy.downloadStep(5_199_999L, 52_000_000L))
+        assertEquals(10, UpdatePromptPolicy.downloadStep(5_200_000L, 52_000_000L))
+        assertEquals(40, UpdatePromptPolicy.downloadStep(25_000_000L, 52_000_000L))
+        assertEquals(90, UpdatePromptPolicy.downloadStep(51_999_999L, 52_000_000L))
+        assertEquals(90, UpdatePromptPolicy.downloadStep(52_000_000L, 52_000_000L))
+        assertEquals(90, UpdatePromptPolicy.downloadStep(60_000_000L, 52_000_000L)) // por si Play se pasa
     }
 }

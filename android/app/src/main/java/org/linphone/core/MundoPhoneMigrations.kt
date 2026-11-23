@@ -18,6 +18,7 @@
  */
 package org.linphone.core
 
+import android.content.Context
 import androidx.annotation.WorkerThread
 import org.linphone.LinphoneApplication.Companion.corePreferences
 import org.linphone.core.tools.Log
@@ -70,6 +71,32 @@ object MundoPhoneMigrations {
         val identities = userTransportIdentities(config)
         if (key in identities) return
         config.setString("app", USER_TRANSPORT_KEY, (identities + key).joinToString(" "))
+    }
+
+    // La compilación (SDK + versionCode) con la que la base del SDK quedó al día en un arranque que llegó a On
+    private const val DB_SCHEMA_KEY = "mundosms_db_schema_for"
+
+    /**
+     * El SDK pone al día su base (linphone.db) en cada arranque con una docena de ALTER TABLE que fallan porque las
+     * columnas ya existen (MainDb::updateSchema, un try/catch por columna sin mirar la versión): ~105 ms medidos en un
+     * arranque en frío por push en un POCO X5 Pro, antes del REGISTER. Con [storage] update_db_at_initialisation=0 el SDK
+     * se lo salta (core.cpp, abstract-db.cpp: solo updateSchema; las tablas que falten se crean igual). Se salta solo si
+     * esta misma compilación [build] ya llegó a On con la base al día: con un SDK o una app nueva, se pone al día una vez.
+     */
+    fun dbSchemaBeforeCoreStart(config: Config, build: String) {
+        val update = config.getString("app", DB_SCHEMA_KEY, "") != build
+        config.setBool("storage", "update_db_at_initialisation", update)
+        if (update) Log.i("$TAG SDK database schema will be updated at startup for [$build]")
+    }
+
+    /** La compilación que cuenta para la base del SDK: la versión del SDK (con su «-mundosms.N») y el versionCode. */
+    fun dbSchemaBuild(context: Context): String =
+        "${context.getString(org.linphone.core.R.string.linphone_sdk_version)}|${org.linphone.BuildConfig.VERSION_CODE}"
+
+    /** El Core llegó a On: la base está al día para [build]. */
+    @WorkerThread
+    fun dbSchemaAfterCoreOn(config: Config, build: String) {
+        if (config.getString("app", DB_SCHEMA_KEY, "") != build) config.setString("app", DB_SCHEMA_KEY, build)
     }
 
     /** Sobre la configuración, antes de que el Core la lea: los valores van por cuenta en [proxy_N] y mandan sobre los por defecto. */
@@ -162,7 +189,11 @@ object MundoPhoneMigrations {
         removeConferenceAndLimeServersOnce(core)
     }
 
-    /** Lo mismo que [beforeCoreStart], para las cuentas que acaba de crear un QR con la app en marcha. */
+    /**
+     * Lo mismo que [beforeCoreStart], para las cuentas que acaba de crear o actualizar un QR con la app en marcha. Solo en
+     * GlobalState On (CoreContext): en ConfiguringState.Successful las cuentas aún son las de antes del XML, y tocar una deja
+     * dos iguales.
+     */
     @WorkerThread
     fun afterProvisioning(core: Core) {
         for (account in core.accountList) {

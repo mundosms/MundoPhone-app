@@ -19,6 +19,9 @@
 
 import linphonesw
 import SwiftUI
+import AVFoundation
+import Contacts
+import UserNotifications
 
 class HelpViewModel: ObservableObject {
 	private let TAG = "[HelpViewModel]"
@@ -180,8 +183,11 @@ class HelpViewModel: ObservableObject {
 	func uploadLogsToSupport(description: String, contact: String) {
 		let device = HelpViewModel.deviceDescription()
 		let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+		let refresh = UIApplication.shared.backgroundRefreshStatus
 		logsUploadInProgress = true
+		UNUserNotificationCenter.current().getNotificationSettings { notifications in
 		CoreContext.shared.doOnCoreQueue { core in
+			HelpViewModel.logPermissions(core: core, notifications: notifications, refresh: refresh)
 			let base = CorePreferences.logsUploadUrl
 			if base.isEmpty {
 				Log.error("\(self.TAG) No logs upload server configured")
@@ -203,6 +209,89 @@ class HelpViewModel: ObservableObject {
 			core.logCollectionUploadServerUrl = base + "?" + query
 			Log.info("\(self.TAG) Uploading debug logs to support server")
 			core.uploadLogCollection()
+		}
+		}
+	}
+
+	/// MundoPhone: los permisos y ajustes del sistema que deciden si una llamada suena, se oye y si se puede escanear el QR,
+	/// al registro que se envía a soporte (como MundoPhoneSegundoPlano.registrar en Android). El 21/11/2026 un registro de
+	/// «no sale la cámara» no decía nada de la cámara. Del token de VoIP solo si lo hay, nunca el token. En la cola del Core.
+	private static func logPermissions(core: Core, notifications: UNNotificationSettings, refresh: UIBackgroundRefreshStatus) {
+		let tag = "[MundoPhone Permissions]"
+		Log.info("\(tag) Microphone [\(microphoneStatus())], camera [\(name(AVCaptureDevice.authorizationStatus(for: .video)))], " +
+				 "contacts [\(name(CNContactStore.authorizationStatus(for: .contacts)))]")
+		let timeSensitive = name(notifications.timeSensitiveSetting)
+		Log.info("\(tag) Notifications [\(name(notifications.authorizationStatus))], alerts [\(name(notifications.alertSetting))], " +
+				 "sound [\(name(notifications.soundSetting))], lock screen [\(name(notifications.lockScreenSetting))], " +
+				 "time sensitive [\(timeSensitive)]")
+		let voip = core.accountList.map { ($0.params?.pushNotificationConfig?.voipToken ?? "").isEmpty ? "no" : "yes" }
+		Log.info("\(tag) Background app refresh [\(name(refresh))], low power mode [\(ProcessInfo.processInfo.isLowPowerModeEnabled)], " +
+				 "VoIP push token per account [\(voip.joined(separator: ","))]")
+	}
+
+	private static func microphoneStatus() -> String {
+		if #available(iOS 17.0, *) {
+			switch AVAudioApplication.shared.recordPermission {
+			case .granted: return "granted"
+			case .denied: return "denied"
+			case .undetermined: return "not determined"
+			@unknown default: return "unknown"
+			}
+		}
+		switch AVAudioSession.sharedInstance().recordPermission {
+		case .granted: return "granted"
+		case .denied: return "denied"
+		case .undetermined: return "not determined"
+		@unknown default: return "unknown"
+		}
+	}
+
+	private static func name(_ status: AVAuthorizationStatus) -> String {
+		switch status {
+		case .authorized: return "authorized"
+		case .denied: return "denied"
+		case .restricted: return "restricted"
+		case .notDetermined: return "not determined"
+		@unknown default: return "unknown (\(status.rawValue))"
+		}
+	}
+
+	private static func name(_ status: CNAuthorizationStatus) -> String {
+		switch status {
+		case .authorized: return "authorized"
+		case .denied: return "denied"
+		case .restricted: return "restricted"
+		case .notDetermined: return "not determined"
+		@unknown default: return status.rawValue == 4 ? "limited" : "unknown (\(status.rawValue))"
+		}
+	}
+
+	private static func name(_ status: UNAuthorizationStatus) -> String {
+		switch status {
+		case .authorized: return "authorized"
+		case .denied: return "denied"
+		case .notDetermined: return "not determined"
+		case .provisional: return "provisional"
+		case .ephemeral: return "ephemeral"
+		@unknown default: return "unknown (\(status.rawValue))"
+		}
+	}
+
+	private static func name(_ setting: UNNotificationSetting) -> String {
+		switch setting {
+		case .enabled: return "on"
+		case .disabled: return "off"
+		case .notSupported: return "not supported"
+		@unknown default: return "unknown (\(setting.rawValue))"
+		}
+	}
+
+	private static func name(_ status: UIBackgroundRefreshStatus) -> String {
+		switch status {
+		case .available: return "available"
+		case .denied: return "denied"
+		case .restricted: return "restricted"
+		@unknown default: return "unknown (\(status.rawValue))"
 		}
 	}
 	

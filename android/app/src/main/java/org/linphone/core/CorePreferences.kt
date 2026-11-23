@@ -75,6 +75,25 @@ class CorePreferences
             config.setInt("app", "config_version", value)
         }
 
+    // MundoPhone: el usuario dice que ha activado el «Inicio automático» de su Xiaomi (no hay API para leerlo; ver
+    // MundoPhoneSegundoPlano)
+    @get:AnyThread @set:WorkerThread
+    var xiaomiBackgroundGuideDone: Boolean
+        get() = config.getBool("app", "mundosms_xiaomi_guide_done", false)
+        set(value) {
+            config.setBool("app", "mundosms_xiaomi_guide_done", value)
+        }
+
+    // MundoPhone: lo que la app leía de «Inicio automático» cuando el usuario pulsó «Ya está» (true/false/unknown). La
+    // lectura no es oficial: si entonces leía «apagado» y el usuario dijo que ya está, gana el usuario; solo se vuelve a
+    // avisar si la lectura empeora después (de encendido a apagado)
+    @get:AnyThread @set:WorkerThread
+    var xiaomiGuideDoneAutostart: String
+        get() = config.getString("app", "mundosms_xiaomi_guide_done_autostart", "") ?: ""
+        set(value) {
+            config.setString("app", "mundosms_xiaomi_guide_done_autostart", value)
+        }
+
     @get:AnyThread @set:WorkerThread
     var autoStart: Boolean
         get() = config.getBool("app", "auto_start", true)

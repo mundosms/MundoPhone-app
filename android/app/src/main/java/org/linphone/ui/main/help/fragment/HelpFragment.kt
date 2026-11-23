@@ -28,6 +28,7 @@ import android.view.ViewGroup
 import androidx.annotation.UiThread
 import androidx.navigation.fragment.findNavController
 import org.linphone.R
+import org.linphone.core.MundoPhoneSegundoPlano
 import org.linphone.core.tools.Log
 import org.linphone.databinding.HelpFragmentBinding
 import org.linphone.ui.GenericActivity
@@ -76,6 +77,12 @@ class HelpFragment : GenericMainFragment() {
                 val action = HelpFragmentDirections.actionHelpFragmentToDebugFragment()
                 findNavController().navigate(action)
             }
+        }
+
+        // MundoPhone: la guía de Xiaomi siempre a mano, con el estado de ahora (aunque se pulsara «Ya está»)
+        binding.backgroundGuideGroup.visibility = if (MundoPhoneSegundoPlano.esXiaomi()) View.VISIBLE else View.GONE
+        binding.setBackgroundGuideClickListener {
+            (requireActivity() as? MainActivity)?.showBackgroundGuide(true)
         }
 
         binding.setUserGuideClickListener {

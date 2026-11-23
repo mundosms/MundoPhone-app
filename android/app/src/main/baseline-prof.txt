@@ -1,0 +1,8 @@
+# MundoPhone: perfil de referencia (baseline profile). AGP lo compila y lo mete en el AAB; Google Play lo aplica al
+# instalar y al ACTUALIZAR, así que el código de arranque ya va compilado desde el primer arranque tras cada actualización
+# (sin él, la app corre interpretada/JIT hasta que Android la optimiza por su cuenta, días después). Lo que más importa
+# es el arranque en frío por push de una llamada entrante: Application.onCreate, CoreContext, la parte Java del SDK
+# (org.linphone.core.*: Factory, Core, AndroidPlatformHelper, FirebaseMessaging), Telecom, notificaciones y contactos.
+# Reglas con comodín (las mismas que usan las librerías de AndroidX en sus perfiles): todo org.linphone.
+HSPLorg/linphone/**->**(**)**
+Lorg/linphone/**

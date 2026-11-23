@@ -234,7 +234,9 @@ class CoreContext: ObservableObject {
                         newParams?.pushNotificationConfig?.teamId = "B922HQ77WT"
                         account.params = newParams
 					}
-					
+					// MundoPhone: TCP 6060 en las cuentas que acaba de crear o actualizar un QR (ver mundosmsAccountsToTcp6060)
+					self.mundosmsAccountsToTcp6060(core: core)
+
 					self.actionsToPerformOnCoreQueueWhenCoreIsStarted.forEach {	$0(core) }
 					self.actionsToPerformOnCoreQueueWhenCoreIsStarted.removeAll()
 					
@@ -322,10 +324,16 @@ class CoreContext: ObservableObject {
 						ToastViewModel.shared.displayToast = true
 					}
 				}
-			}, onConfiguringStatus: { (_: Core, status: ConfiguringState, message: String) in
+			}, onConfiguringStatus: { (core: Core, status: ConfiguringState, message: String) in
 				Log.info("New configuration state is \(status) = \(message)\n")
-				if status == ConfiguringState.Successful {
-					self.mundosmsAccountsToTcp6060(core: self.mCore)
+				// MundoPhone: el file:// del XML del QR no se queda en la configuración aunque la pantalla del QR ya no exista (si
+				// la app cae justo después de aplicarlo, cada arranque fallaría con «Bad URI»; visto en Android el 21/11/2026). Al
+				// disco en el acto: el Core de iOS relee la configuración del disco al arrancar.
+				if status != .Skipped, (core.provisioningUri ?? "").hasSuffix("/\(Coordinator.qrXmlFileName)") {
+					Log.info("[CoreContext] MundoPhone: clearing the QR code provisioning URI")
+					try? core.setProvisioninguri(newValue: nil)
+					try? core.config?.sync()
+					try? FileManager.default.removeItem(at: Coordinator.qrXmlFile())
 				}
 				DispatchQueue.main.async {
 					if status == ConfiguringState.Successful {
@@ -486,7 +494,10 @@ class CoreContext: ObservableObject {
 	}
 	
 	/// MundoPhone: lo mismo que Config.mundosmsEnsurePushTcp6060, para las cuentas que acaba de crear un QR con la app ya
-	/// en marcha: si no, irían por UDP hasta el siguiente arranque.
+	/// en marcha: si no, irían por UDP hasta el siguiente arranque. Va en GlobalState.On y NO en ConfiguringState.Successful:
+	/// ahí la lista de cuentas aún es la de antes del XML (el SDK la vuelve a leer justo después), y si se toca una el SDK
+	/// ya no la retira y quedan dos iguales registrándose a la vez. Le pasó a Android (dos cuentas
+	/// y la app cerrada al escanear dos veces el QR). Aquí no se disparaba porque el XML del panel ya va en TCP 6060.
 	func mundosmsAccountsToTcp6060(core: Core) {
 		for account in core.accountList {
 			guard let params = account.params, let server = params.serverAddress,

@@ -42,6 +42,7 @@ import org.linphone.core.Core
 import org.linphone.core.CoreListenerStub
 import org.linphone.core.GlobalState
 import org.linphone.core.MessageWaitingIndication
+import org.linphone.core.MundoPhoneSegundoPlano
 import org.linphone.core.RegistrationState
 import org.linphone.core.VFS
 import org.linphone.core.tools.AndroidPlatformHelper
@@ -60,11 +61,17 @@ class MainViewModel
         private const val TAG = "[Main ViewModel]"
 
         const val NONE = 0
+
+        // MundoPhone: la actualización de Play bajándose (AppUpdateChecker); la prioridad más baja, no tapa a ninguna
+        const val APP_UPDATE_DOWNLOADING = 3
         const val MWI_MESSAGES_WAITING = 4
         const val NON_DEFAULT_ACCOUNT_NOTIFICATIONS = 5
         const val NON_DEFAULT_ACCOUNT_NOT_CONNECTED = 10
         const val FULL_SCREEN_INTENTS_PERMISSION_NOT_GRANTED = 14
         const val SEND_NOTIFICATIONS_PERMISSION_NOT_GRANTED = 15
+
+        // MundoPhone: Android puede no despertar la app con el push de una llamada (ver MundoPhoneSegundoPlano)
+        const val APP_RESTRICTED_IN_BACKGROUND = 16
         const val DEFAULT_ACCOUNT_DISABLED = 18
         const val NETWORK_NOT_REACHABLE = 19
 
@@ -104,6 +111,11 @@ class MainViewModel
     }
 
     val askFullScreenIntentPermissionEvent: MutableLiveData<Event<Boolean>> by lazy {
+        MutableLiveData()
+    }
+
+    // MundoPhone: enseñar cómo dejar que Android despierte la app (true = Xiaomi)
+    val showBackgroundGuideEvent: MutableLiveData<Event<Boolean>> by lazy {
         MutableLiveData()
     }
 
@@ -149,6 +161,9 @@ class MainViewModel
     var mainIntentHandled = false
 
     private val alertsList = arrayListOf<Pair<Int, String>>()
+
+    // MundoPhone: el usuario cerró la barra con el aviso de descarga a la vista: no vuelve hasta la próxima descarga
+    private var appUpdateAlertClosed = false
 
     private var firstAccountRegistered: Boolean = false
 
@@ -466,11 +481,13 @@ class MainViewModel
             coreContext.postOnCoreThread {
                 checkFullScreenIntentNotificationPermission()
                 checkPostNotificationsPermission()
+                checkBackgroundRestrictions()
             }
         } else {
             // MundoPhone: también por debajo de Android 13, donde se pueden apagar en los ajustes sin permiso
             coreContext.postOnCoreThread {
                 checkPostNotificationsPermission()
+                checkBackgroundRestrictions()
             }
         }
     }
@@ -503,6 +520,7 @@ class MainViewModel
         showAlert.value = false
 
         coreContext.postOnCoreThread {
+            if (alertsList.any { it.first == APP_UPDATE_DOWNLOADING }) appUpdateAlertClosed = true
             Log.i("$TAG User closed alerts top bar, clearing alerts")
             showAlert.postValue(false)
             alertsList.clear()
@@ -514,6 +532,9 @@ class MainViewModel
     fun onTopBarClicked() {
         if (atLeastOneCall.value == true) {
             goBackToCallEvent.value = Event(true)
+        } else if (maxAlertLevel.value == APP_RESTRICTED_IN_BACKGROUND) {
+            // MundoPhone: antes que los permisos, para que el toque haga lo que dice la barra que se ve
+            showBackgroundGuideEvent.value = Event(MundoPhoneSegundoPlano.esXiaomi())
         } else if (!Compatibility.hasFullScreenIntentPermission(coreContext.context)) {
             askFullScreenIntentPermissionEvent.value = Event(true)
         } else if (!Compatibility.areNotificationsEnabled(coreContext.context)) { // MundoPhone: también apagadas (< 13)
@@ -522,6 +543,9 @@ class MainViewModel
             coreContext.postOnCoreThread {
                 callVoiceMail()
             }
+        } else if (maxAlertLevel.value == APP_UPDATE_DOWNLOADING) {
+            // MundoPhone: el aviso de descarga solo informa, no hay nada que abrir
+            Log.i("$TAG App update download alert clicked, nothing to do")
         } else {
             openDrawerEvent.value = Event(true)
         }
@@ -699,6 +723,34 @@ class MainViewModel
         }
     }
 
+    /**
+     * MundoPhone: «Descargando la actualización…» en la barra de avisos mientras Play baja la versión aceptada (antes no se
+     * veía nada hasta «Reiniciar»). [step] de 10 en 10, o -1 si Play aún no sabe el tamaño.
+     */
+    @UiThread
+    fun showAppUpdateDownloading(step: Int) {
+        coreContext.postOnCoreThread {
+            if (appUpdateAlertClosed) return@postOnCoreThread
+            val label = if (step < 0) {
+                AppUtils.getString(R.string.app_update_downloading_alert)
+            } else {
+                AppUtils.getFormattedString(R.string.app_update_downloading_alert_percent, step)
+            }
+            addAlert(APP_UPDATE_DOWNLOADING, label, forceUpdate = true)
+        }
+    }
+
+    /** MundoPhone: la descarga terminó, falló o se canceló. */
+    @UiThread
+    fun hideAppUpdateDownloading() {
+        coreContext.postOnCoreThread {
+            appUpdateAlertClosed = false
+            if (alertsList.any { it.first == APP_UPDATE_DOWNLOADING }) {
+                removeAlert(APP_UPDATE_DOWNLOADING)
+            }
+        }
+    }
+
     @WorkerThread
     private fun addAlert(type: Int, label: String, forceUpdate: Boolean = false) {
         val found = alertsList.find {
@@ -752,11 +804,14 @@ class MainViewModel
             Log.i("$TAG Max priority alert right now is [$type]")
             maxAlertLevel.postValue(type)
             val icon = when (type) {
-                DEFAULT_ACCOUNT_DISABLED -> {
+                DEFAULT_ACCOUNT_DISABLED, APP_RESTRICTED_IN_BACKGROUND -> {
                     R.drawable.warning_circle
                 }
                 NETWORK_NOT_REACHABLE -> {
                     R.drawable.wifi_slash
+                }
+                APP_UPDATE_DOWNLOADING -> {
+                    R.drawable.download_simple
                 }
                 SEND_NOTIFICATIONS_PERMISSION_NOT_GRANTED, FULL_SCREEN_INTENTS_PERMISSION_NOT_GRANTED -> {
                     R.drawable.bell_slash
@@ -811,6 +866,40 @@ class MainViewModel
             }
         } else {
             removeAlert(FULL_SCREEN_INTENTS_PERMISSION_NOT_GRANTED)
+        }
+    }
+
+    /**
+     * MundoPhone: ¿puede Android no despertar la app con el push de una llamada? Siempre si la tiene restringida en segundo
+     * plano o en el grupo «restringido»; en Xiaomi/Redmi/POCO además con la batería optimizada o sin la guía confirmada,
+     * porque ahí se pierden las llamadas (K5, 16-19/11/2026: 114 de 146 avisos sin respuesta eran Xiaomi; Samsung, con la
+     * batería optimizada por defecto, falla el 1 %).
+     */
+    @WorkerThread
+    private fun checkBackgroundRestrictions() {
+        val estado = MundoPhoneSegundoPlano.estado(coreContext.context)
+        // En Xiaomi: la batería (API oficial) manda siempre. «Inicio automático» se lee de MIUI sin API oficial: si está
+        // encendido, no hace falta «Ya está»; si se lee apagado, avisa, salvo que el usuario dijera «Ya está» leyéndose ya
+        // apagado (puede ser una mala lectura: gana el usuario); si dijo «Ya está» con otra lectura y ahora se lee apagado,
+        // algo lo ha cambiado y vuelve a avisar. Sin lectura, cuenta el «Ya está».
+        val hecho = corePreferences.xiaomiBackgroundGuideDone
+        val inicioAutomaticoMal = when (estado.inicioAutomatico) {
+            true -> false
+            false -> !(hecho && corePreferences.xiaomiGuideDoneAutostart == "false")
+            null -> !hecho
+        }
+        val xiaomiEnRiesgo = estado.xiaomi && (estado.bateriaOptimizada || inicioAutomaticoMal)
+        val enRiesgo = estado.segundoPlanoRestringido || estado.grupoRestringido || xiaomiEnRiesgo
+        val mostrado = alertsList.any { it.first == APP_RESTRICTED_IN_BACKGROUND }
+        if (enRiesgo && !mostrado) {
+            Log.w(
+                "$TAG Android may not wake the app up for calls: background restricted [${estado.segundoPlanoRestringido}], " +
+                    "restricted bucket [${estado.grupoRestringido}], Xiaomi [${estado.xiaomi}], battery optimized [${estado.bateriaOptimizada}], " +
+                    "autostart [${estado.inicioAutomatico ?: "unknown"}]"
+            )
+            addAlert(APP_RESTRICTED_IN_BACKGROUND, AppUtils.getString(R.string.background_restricted_alert))
+        } else if (!enRiesgo && mostrado) {
+            removeAlert(APP_RESTRICTED_IN_BACKGROUND)
         }
     }
 

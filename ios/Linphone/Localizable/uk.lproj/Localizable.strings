@@ -339,6 +339,12 @@
 "assistant_permissions_subtitle" = "Щоб повною мірою користуватися %@, вам потрібно надати застосунку наступні дозволи:";
 "assistant_permissions_title" = "Надати дозволи";
 "assistant_qr_code_invalid_toast" = "Недійсний QR-код!";
+"assistant_qr_code_expired_toast" = "The QR code has expired: generate a new one from the panel";
+"assistant_qr_code_used_toast" = "This QR code has already been used: generate a new one from the panel";
+"assistant_qr_code_not_mundosms_toast" = "This QR code isn't from MundoSMS: scan the one in SIP Lines on the panel";
+"assistant_qr_code_already_configured_toast" = "This extension is already set up";
+"assistant_qr_camera_denied" = "MundoPhone isn't allowed to use the camera. Turn it on in Settings, or pick a photo of the QR code with the gallery button.";
+"assistant_qr_open_settings" = "Open Settings";
 "assistant_duplicate_account_toast" = "Цей обліковий запис вже налаштований і не може бути доданий двічі";
 "assistant_remote_provisioning_failed_toast" = "Не вдалося застосувати віддалену конфігурацію";
 "assistant_scan_qr_code" = "Відскануйте QR-код";

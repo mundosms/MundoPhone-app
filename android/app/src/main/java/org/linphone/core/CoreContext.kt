@@ -160,10 +160,21 @@ class CoreContext
 
     private var keepAliveServiceStarted = false
 
+    // MundoPhone: el aprovisionamiento acaba de aplicarse; sus ajustes de cuenta esperan a GlobalState On (onConfiguringStatus)
+    private var provisioningJustApplied = false
+
     private lateinit var proximityWakeLock: PowerManager.WakeLock
 
     @SuppressLint("HandlerLeak")
     private lateinit var coreThread: Handler
+
+    /**
+     * MundoPhone: el Core está en GlobalState On. Lo lee el hilo de FCM (MundoPhoneFirebaseMessaging), que no puede preguntar
+     * al Core desde fuera de su hilo, para decidir si guarda el push para cuando arranque.
+     */
+    @Volatile
+    var isCoreOn = false
+        private set
 
     // MundoPhone: al registrar el callback, Android avisa enseguida con TODOS los dispositivos que ya hay, y recargarlos 500 ms
     // después bloqueaba el hilo del Core 40-45 ms en plena ventana del REGISTER/INVITE de un arranque por push (registros
@@ -296,8 +307,14 @@ class CoreContext
         @WorkerThread
         override fun onGlobalStateChanged(core: Core, state: GlobalState, message: String) {
             Log.i("$TAG Global state changed [$state]")
+            isCoreOn = state == GlobalState.On
 
             if (state == GlobalState.On) {
+                // MundoPhone: TCP y push en las cuentas que acaba de crear o actualizar el QR, ya con la lista definitiva
+                if (provisioningJustApplied) {
+                    provisioningJustApplied = false
+                    MundoPhoneMigrations.afterProvisioning(core)
+                }
                 // Wait for GlobalState.ON as some settings modification won't be saved
                 // in RC file if Core isn't ON
                 onCoreStarted()
@@ -313,6 +330,17 @@ class CoreContext
             message: String?
         ) {
             Log.i("$TAG Configuring state changed [$status], message is [$message]")
+            // MundoPhone: el file:// del XML del QR no se queda en la configuración aunque la pantalla del QR ya no exista.
+            // Tras un cierre justo después de aplicarlo quedaba ahí, con el fichero ya borrado, y cada arranque fallaba con
+            // «Bad URI» (A52s, 21/11/2026, de 12:50 a 15:26). Se guarda en el acto: si la app cae antes, se perdería.
+            if (status != ConfiguringState.Skipped &&
+                core.provisioningUri.orEmpty().endsWith("/${MundoPhoneAprovisionamiento.FICHERO_QR}")
+            ) {
+                Log.i("$TAG Clearing the QR code provisioning URI")
+                core.provisioningUri = null
+                core.config.sync()
+                java.io.File(context.noBackupFilesDir, MundoPhoneAprovisionamiento.FICHERO_QR).delete()
+            }
             if (status == ConfiguringState.Successful) {
                 val accounts = core.accountList
                 if (core.defaultAccount == null && accounts.isNotEmpty()) {
@@ -326,8 +354,11 @@ class CoreContext
                     }
                 }
 
-                // MundoPhone: TCP y push en las cuentas que acaba de crear el QR (el XML del panel es común con iOS)
-                MundoPhoneMigrations.afterProvisioning(core)
+                // MundoPhone: TCP y push en las cuentas del QR (el XML del panel es común con iOS), pero en GlobalState On y no
+                // aquí: en Successful la lista aún es la de ANTES del XML, que el SDK vuelve a leer justo después, y si aquí se
+                // toca una cuenta (account.params) el SDK ya no la retira. Escanear dos veces seguidas el QR de la misma
+                // extensión dejaba dos cuentas iguales registrándose a la vez, y en un A52s la app se cerró (21/11/2026).
+                provisioningJustApplied = true
 
                 provisioningAppliedEvent.postValue(Event(true))
                 corePreferences.firstLaunch = false
@@ -728,7 +759,7 @@ class CoreContext
         // MundoPhone: las versiones de la serie 22 no enseñaban la bienvenida y solo marcaban first_6.0_launch al
         // aprovisionar por QR: quien actualiza desde ellas no la ve. Aquí y no en onCoreStarted, junto a las
         // migraciones: MainActivity mira firstLaunch en cuanto isReady() y su tarea en este hilo puede correr antes que
-        // startCore (50 ms después).
+        // startCore.
         if (MundoPhoneMigrations.isVersion22(corePreferences.linphoneConfigurationVersion) && corePreferences.firstLaunch) {
             Log.i("$TAG Updating from a configuration without welcome screens: they won't be shown")
             corePreferences.firstLaunch = false
@@ -748,7 +779,11 @@ class CoreContext
 
         defaultAccountHasVideoConferenceFactoryUri = core.defaultAccount?.params?.audioVideoConferenceFactoryAddress != null
 
-        coreThread.postDelayed({ startCore() }, 50)
+        // MundoPhone: sin los 50 ms de espera de upstream («to speed up app cold startup», pensado para que la UI arranque
+        // antes): en el arranque por push eran 50 ms fijos antes del REGISTER (medido: «Core creado» → «Starting Core»,
+        // 50-54 ms en un POCO y en un Samsung de gama alta). El push ya no depende de ese margen: si llega con el Core
+        // sin arrancar, MundoPhoneFirebaseMessaging lo guarda en su propio hilo, sin pasar por el principal.
+        coreThread.post { startCore() }
 
         Looper.loop()
     }
@@ -766,6 +801,8 @@ class CoreContext
     @WorkerThread
     fun startCore() {
         Log.i("$TAG Starting Core")
+        // MundoPhone: antes de core.start(), que es cuando el SDK procesa el push guardado
+        MundoPhonePushGuardado.descartarViejo(context)
 
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         audioManager.registerAudioDeviceCallback(audioDeviceCallback, coreThread)
@@ -786,6 +823,7 @@ class CoreContext
     @WorkerThread
     fun onCoreStarted() {
         Log.i("$TAG Core started, updating configuration if required")
+        MundoPhoneMigrations.dbSchemaAfterCoreOn(core.config, MundoPhoneMigrations.dbSchemaBuild(context))
         core.videoCodecPriorityPolicy = CodecPriorityPolicy.Auto
 
         // Set in the Core the list of directories from which it is allowed to delete a file related to a chat message
@@ -872,6 +910,9 @@ class CoreContext
             }, 3000)
         }
 
+        // MundoPhone: antes que Telecom y Notificaciones, para que la marca del tono quede justo detrás de él
+        core.removeListener(MundoPhoneTiempos.ringListener)
+        core.addListener(MundoPhoneTiempos.ringListener)
         contactsManager.onCoreStarted(core)
         telecomManager.onCoreStarted(core)
         // Re-create channels when migrating from a non 6.0 version (MundoPhone: también una vez al venir de la serie

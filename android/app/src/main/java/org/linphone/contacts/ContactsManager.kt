@@ -34,6 +34,10 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.Person
 import androidx.core.graphics.drawable.IconCompat
 import androidx.loader.app.LoaderManager
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -75,6 +79,9 @@ class ContactsManager
     companion object {
         private const val TAG = "[Contacts Manager]"
 
+        // MundoPhone: tope de la consulta a la agenda de Android durante la llamada entrante (la 1.ª en frío, 77-97 ms en un POCO)
+        private const val NATIVE_LOOKUP_TIMEOUT_MS = 300L
+
         private const val DELAY_BEFORE_RELOADING_CONTACTS_AFTER_PRESENCE_RECEIVED = 1000L // 1 second
         private const val DELAY_BEFORE_RELOADING_CONTACTS_AFTER_MAGIC_SEARCH_RESULT = 1000L // 1 second
         private const val FRIEND_LIST_TEMPORARY_STORED_REMOTE_DIRECTORY = "TempRemoteDirectoryContacts"
@@ -101,6 +108,9 @@ class ContactsManager
     // MundoPhone: consultas puntuales a la agenda de Android mientras no se ha cargado entera (ver
     // lookupNativeContactOnDemand)
     private val nativeOnDemandCache = hashMapOf<String, Friend?>()
+
+    // MundoPhone: la consulta a la agenda de Android de una llamada entrante (queryNativeContact), fuera del hilo del Core
+    private val nativeLookupExecutor = Executors.newSingleThreadExecutor { Thread(it, "MundoPhone contact lookup") }
 
     // MundoPhone (D3): resultado de findContactByPhoneNumber() por número, «no encontrado» incluido. Recorrer todos los
     // contactos por cada número desconocido, en cada búsqueda y cada refresco de lista, es lo que colgaba el buscador
@@ -616,6 +626,23 @@ class ContactsManager
                     address
                 )
             }
+        } catch (timeout: NativeLookupTimeout) {
+            Log.w("$TAG On-demand native contact lookup for [$key] took more than [$NATIVE_LOOKUP_TIMEOUT_MS] ms, going on without it")
+            val lateAddress = address.clone()
+            nativeLookupExecutor.execute {
+                val row = try {
+                    timeout.pending.get()
+                } catch (e: Exception) {
+                    null
+                }
+                coreContext.postOnCoreThread {
+                    if (!nativeOnDemandCache.containsKey(key)) {
+                        nativeOnDemandCache[key] = row?.let { friendFromNativeRow(it, lateAddress) }
+                        Log.i("$TAG Late on-demand native contact lookup for [$key]: ${if (row != null) "found" else "not found"}")
+                    }
+                }
+            }
+            return null
         } catch (e: Exception) {
             Log.e("$TAG On-demand native contact lookup failed: $e")
             null
@@ -625,6 +652,18 @@ class ContactsManager
         return found
     }
 
+    /** MundoPhone: una fila de la agenda de Android, leída fuera del hilo del Core (ver queryNativeContact). */
+    private class NativeRow(val id: String?, val name: String, val lookupKey: String?, val starred: Boolean)
+
+    /** MundoPhone: la consulta a Android pasó del tope: la llamada sigue sin el nombre (ver lookupNativeContactOnDemand). */
+    private class NativeLookupTimeout(val pending: Future<NativeRow?>) : Exception()
+
+    /**
+     * MundoPhone: la consulta a la agenda de Android va en su propio hilo y se espera como mucho NATIVE_LOOKUP_TIMEOUT_MS.
+     * Corre en el hilo del Core en plena llamada entrante: medido, la primera en frío tarda 77-97 ms en un POCO, y si el
+     * proveedor de contactos se atasca, sin tope se paraba todo el SIP (el 180, un CANCEL, el iterate). El Friend se crea
+     * aquí, en el hilo del Core, como exige el SDK.
+     */
     @WorkerThread
     private fun queryNativeContact(
         uri: Uri,
@@ -640,25 +679,39 @@ class ContactsManager
             ContactsContract.Contacts.LOOKUP_KEY,
             ContactsContract.Contacts.STARRED
         )
-        coreContext.context.contentResolver.query(uri, projection, selection, selectionArgs, null)
-            ?.use { cursor ->
-                if (!cursor.moveToFirst()) return null
-                val name = cursor.getString(cursor.getColumnIndexOrThrow(nameColumn))
-                if (name.isNullOrEmpty()) return null
+        val pending = nativeLookupExecutor.submit<NativeRow?> {
+            coreContext.context.contentResolver.query(uri, projection, selection, selectionArgs, null)
+                ?.use { cursor ->
+                    if (!cursor.moveToFirst()) return@use null
+                    val name = cursor.getString(cursor.getColumnIndexOrThrow(nameColumn))
+                    if (name.isNullOrEmpty()) return@use null
+                    NativeRow(
+                        cursor.getString(cursor.getColumnIndexOrThrow(idColumn)),
+                        name,
+                        cursor.getString(cursor.getColumnIndexOrThrow(ContactsContract.Contacts.LOOKUP_KEY)),
+                        cursor.getInt(cursor.getColumnIndexOrThrow(ContactsContract.Contacts.STARRED)) == 1
+                    )
+                }
+        }
+        val row = try {
+            pending.get(NATIVE_LOOKUP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        } catch (e: TimeoutException) {
+            throw NativeLookupTimeout(pending)
+        }
+        return row?.let { friendFromNativeRow(it, address) }
+    }
 
-                val friend = coreContext.core.createFriend()
-                friend.refKey = cursor.getString(cursor.getColumnIndexOrThrow(idColumn))
-                friend.name = name
-                friend.starred =
-                    cursor.getInt(cursor.getColumnIndexOrThrow(ContactsContract.Contacts.STARRED)) == 1
-                val lookupKey = cursor.getString(cursor.getColumnIndexOrThrow(ContactsContract.Contacts.LOOKUP_KEY))
-                friend.nativeUri = "${ContactsContract.Contacts.CONTENT_LOOKUP_URI}/$lookupKey"
-                friend.getNativeContactPictureUri()?.let { friend.photo = it.toString() }
-                friend.address = address.clone()
-                applyNativeFavoriteOverride(friend)
-                return friend
-            }
-        return null
+    @WorkerThread
+    private fun friendFromNativeRow(row: NativeRow, address: Address): Friend {
+        val friend = coreContext.core.createFriend()
+        friend.refKey = row.id
+        friend.name = row.name
+        friend.starred = row.starred
+        friend.nativeUri = "${ContactsContract.Contacts.CONTENT_LOOKUP_URI}/${row.lookupKey}"
+        friend.getNativeContactPictureUri()?.let { friend.photo = it.toString() }
+        friend.address = address.clone()
+        applyNativeFavoriteOverride(friend)
+        return friend
     }
 
     /**

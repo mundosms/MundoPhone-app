@@ -20,6 +20,7 @@
 package org.linphone.telecom
 
 import android.content.Context
+import androidx.annotation.MainThread
 import androidx.annotation.WorkerThread
 import androidx.core.telecom.CallAttributesCompat
 import androidx.core.telecom.CallException
@@ -30,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.linphone.LinphoneApplication.Companion.coreContext
+import org.linphone.LinphoneApplication.Companion.corePreferences
 import org.linphone.core.AudioDevice
 import org.linphone.core.Call
 import org.linphone.core.Core
@@ -64,7 +66,19 @@ class TelecomManager
             state: Call.State?,
             message: String
         ) {
-            if (state == Call.State.IncomingReceived || state == Call.State.OutgoingProgress) {
+            if (state == Call.State.IncomingReceived && !answeredRightAway()) {
+                // MundoPhone: detrás del tono. Al entrar la llamada el SDK encola el tono en este hilo (startRinging), y
+                // todo lo que hagan antes los oyentes lo retrasa: aquí, buscar el contacto (la 1.ª consulta a Android, 77-97
+                // ms en un POCO en frío) y la información de conferencias. Con descolgado automático inmediato, como
+                // siempre: no dar de alta en Telecom una llamada ya contestada.
+                coreContext.postOnCoreThread {
+                    if (LinphoneUtils.isCallIncoming(call.state)) {
+                        onCallCreated(call)
+                    } else {
+                        Log.w("$TAG Call isn't incoming anymore [${call.state}], not adding it to Telecom")
+                    }
+                }
+            } else if (state == Call.State.IncomingReceived || state == Call.State.OutgoingProgress) {
                 onCallCreated(call)
             }
         }
@@ -79,7 +93,9 @@ class TelecomManager
 
     private var currentlyFollowedCalls: Int = 0
 
-    init {
+    /** MundoPhone: lo llama LinphoneApplication justo después de arrancar el hilo del Core (antes, en el init). */
+    @MainThread
+    fun registerWithTelecom() {
         Log.i(
             "$TAG Feature is [${if (hasTelecomFeature) "available" else "not available"}]"
         )
@@ -108,6 +124,8 @@ class TelecomManager
         }
         return callbacks.changeEndpointBeforeCore(type, apply)
     }
+
+    private fun answeredRightAway() = corePreferences.autoAnswerEnabled && corePreferences.autoAnswerDelay == 0
 
     @WorkerThread
     fun onCallCreated(call: Call) {

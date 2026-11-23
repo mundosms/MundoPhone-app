@@ -59,7 +59,9 @@ class StartConversationFragment : GenericAddressPickerFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         viewModel = ViewModelProvider(this)[StartConversationViewModel::class.java]
 
-        postponeEnterTransition()
+        // MundoPhone: sin postponeEnterTransition(): la pantalla no espera a la lista de contactos. Esperándola no se
+        // veía hasta 400-500 ms después del toque (Galaxy A52s, ~1.500 contactos); con un tope de 100 ms, a los 185 ms
+        // (la lista nunca llegaba antes). Con pocos contactos la lista aparece un instante después de la pantalla.
         super.onViewCreated(view, savedInstanceState)
 
         binding.lifecycleOwner = viewLifecycleOwner

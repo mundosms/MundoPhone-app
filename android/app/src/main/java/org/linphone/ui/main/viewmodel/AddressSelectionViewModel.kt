@@ -153,7 +153,9 @@ abstract class AddressSelectionViewModel
 
     init {
         multipleSelectionMode.value = false
-        isEmpty.value = true
+        // MundoPhone: «sin contactos ni sugerencias» solo cuando la búsqueda haya terminado sin nada. Con true de inicio,
+        // ahora que Nueva llamada y Nueva conversación aparecen antes de tener la lista, el aviso asomaba unas décimas.
+        isEmpty.value = false
 
         coreContext.postOnCoreThread { core ->
             coreContext.contactsManager.addListener(contactsListener)

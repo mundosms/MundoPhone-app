@@ -128,6 +128,34 @@ struct ToastView: View {
 							.foregroundStyle(Color.redDanger500)
 							.default_text_style(styleSize: 15)
 							.padding(8)
+
+					case "QR_code_expired":
+						Text("assistant_qr_code_expired_toast")
+							.multilineTextAlignment(.center)
+							.foregroundStyle(Color.redDanger500)
+							.default_text_style(styleSize: 15)
+							.padding(8)
+
+					case "QR_code_used":
+						Text("assistant_qr_code_used_toast")
+							.multilineTextAlignment(.center)
+							.foregroundStyle(Color.redDanger500)
+							.default_text_style(styleSize: 15)
+							.padding(8)
+
+					case "QR_code_not_mundosms":
+						Text("assistant_qr_code_not_mundosms_toast")
+							.multilineTextAlignment(.center)
+							.foregroundStyle(Color.redDanger500)
+							.default_text_style(styleSize: 15)
+							.padding(8)
+
+					case "Success_qr_code_already_configured":
+						Text("assistant_qr_code_already_configured_toast")
+							.multilineTextAlignment(.center)
+							.foregroundStyle(Color.greenSuccess500)
+							.default_text_style(styleSize: 15)
+							.padding(8)
 						
 					case "Invalide URI":
 						Text("assistant_invalid_uri_toast")

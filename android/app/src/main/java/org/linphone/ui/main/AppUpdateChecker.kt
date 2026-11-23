@@ -50,6 +50,8 @@ import org.linphone.core.tools.Log
  *   (al volver de su diálogo la app comprueba de nuevo, y Play puede tardar en decir que ya la descarga), y el aviso de
  *   «descargada, reiniciar» no se repite si ya está a la vista (lo piden a la vez el aviso de fin de descarga y la vuelta
  *   a la app).
+ * - Mientras Play baja una flexible aceptada, «Descargando la actualización… 40 %» en la barra de avisos de arriba (antes
+ *   no se veía nada hasta «Reiniciar» y no quedaba claro si se había aceptado); se quita al terminar, fallar o cancelarse.
  * Solo funciona en instalaciones desde Play (también la prueba interna). Cualquier fallo se ignora: la app sigue igual.
  */
 class AppUpdateChecker(private val activity: MainActivity) {
@@ -88,6 +90,8 @@ class AppUpdateChecker(private val activity: MainActivity) {
             }
         } else if (result.resultCode == Activity.RESULT_OK) {
             acceptedCode = offeredCode
+            // Aviso desde ya: Play tarda unos segundos en dar el primer progreso
+            if (offeredType == AppUpdateType.FLEXIBLE) showDownloading(0L, 0L)
         }
     }
 
@@ -96,6 +100,12 @@ class AppUpdateChecker(private val activity: MainActivity) {
 
     // La versión aceptada en esta sesión: no se vuelve a ofrecer mientras Play empieza a bajarla
     private var acceptedCode = 0
+
+    // El tipo del último diálogo de Play pedido (el aviso de descarga solo es para la flexible)
+    private var offeredType = AppUpdateType.FLEXIBLE
+
+    // Tramo de descarga a la vista en la barra de avisos (UpdatePromptPolicy.downloadStep); MIN_VALUE = sin aviso
+    private var shownStep = Int.MIN_VALUE
 
     private var restartDialog: AlertDialog? = null
 
@@ -137,6 +147,7 @@ class AppUpdateChecker(private val activity: MainActivity) {
             info.installStatus() == InstallStatus.PENDING ||
             info.installStatus() == InstallStatus.INSTALLING
         ) {
+            followDownload(info)
             return ManualResult.DOWNLOADING
         }
         if (info.updateAvailability() == UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS) {
@@ -159,8 +170,16 @@ class AppUpdateChecker(private val activity: MainActivity) {
     private var offeredCode = 0
 
     private val installListener = InstallStateUpdatedListener { state ->
-        if (state.installStatus() == InstallStatus.DOWNLOADED) {
-            offerRestart()
+        when (state.installStatus()) {
+            InstallStatus.PENDING, InstallStatus.DOWNLOADING -> {
+                showDownloading(state.bytesDownloaded(), state.totalBytesToDownload())
+            }
+            InstallStatus.DOWNLOADED -> offerRestart()
+            InstallStatus.FAILED, InstallStatus.CANCELED -> {
+                Log.w("$TAG Update download ended with status [${state.installStatus()}], error [${state.installErrorCode()}]")
+                hideDownloading()
+            }
+            else -> Unit
         }
     }
 
@@ -209,11 +228,12 @@ class AppUpdateChecker(private val activity: MainActivity) {
             offerRestart()
             return
         }
-        // Aceptada y descargándose: no se vuelve a ofrecer encima
+        // Aceptada y descargándose: no se vuelve a ofrecer encima, y el aviso sigue a la vista (también al volver a la app)
         if (info.installStatus() == InstallStatus.DOWNLOADING ||
             info.installStatus() == InstallStatus.PENDING ||
             info.installStatus() == InstallStatus.INSTALLING
         ) {
+            followDownload(info)
             return
         }
         if (info.updateAvailability() != UpdateAvailability.UPDATE_AVAILABLE) return
@@ -248,13 +268,47 @@ class AppUpdateChecker(private val activity: MainActivity) {
         }
     }
 
+    /** Una descarga ya en marcha (vuelta a la app, otra MainActivity): el aviso con su progreso y escuchar cómo acaba. */
+    @UiThread
+    private fun followDownload(info: AppUpdateInfo) {
+        if (info.installStatus() == InstallStatus.INSTALLING) return
+        registerListener()
+        showDownloading(info.bytesDownloaded(), info.totalBytesToDownload())
+    }
+
+    @UiThread
+    private fun registerListener() {
+        if (!listenerRegistered) {
+            manager.registerListener(installListener)
+            listenerRegistered = true
+        }
+    }
+
+    /** El aviso con el tramo de la descarga; solo se redibuja al cambiar de tramo. */
+    @UiThread
+    private fun showDownloading(bytes: Long, total: Long) {
+        val step = UpdatePromptPolicy.downloadStep(bytes, total)
+        if (step == shownStep) return
+        shownStep = step
+        Log.i("$TAG Update downloading [${if (step < 0) "?" else "$step %"}]")
+        activity.showAppUpdateDownloading(step)
+    }
+
+    /**
+     * Siempre, aunque este AppUpdateChecker no lo haya puesto: el MainViewModel sobrevive a un giro de pantalla con el aviso
+     * dentro y el de la actividad nueva no lo sabe (quitarlo sin estar no hace nada).
+     */
+    @UiThread
+    private fun hideDownloading() {
+        shownStep = Int.MIN_VALUE
+        activity.hideAppUpdateDownloading()
+    }
+
     @UiThread
     private fun start(info: AppUpdateInfo, type: Int) {
         try {
-            if (type == AppUpdateType.FLEXIBLE && !listenerRegistered) {
-                manager.registerListener(installListener)
-                listenerRegistered = true
-            }
+            if (type == AppUpdateType.FLEXIBLE) registerListener()
+            offeredType = type
             flowStartedAt = SystemClock.elapsedRealtime()
             flowPausedAt = 0L
             flowShownAt = 0L
@@ -267,6 +321,7 @@ class AppUpdateChecker(private val activity: MainActivity) {
 
     @UiThread
     private fun offerRestart() {
+        hideDownloading()
         if (activity.isFinishing || activity.isDestroyed) return
         if (restartDialog?.isShowing == true) return
         restartDialog = AlertDialog.Builder(activity)

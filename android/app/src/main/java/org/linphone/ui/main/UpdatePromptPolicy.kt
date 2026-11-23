@@ -36,4 +36,11 @@ object UpdatePromptPolicy {
     fun countsAsDeclined(shownForMs: Long): Boolean = shownForMs >= ACCIDENTAL_MS
 
     const val ACCIDENTAL_MS = 2000L
+
+    /**
+     * Tramo del aviso «descargando» (AppUpdateChecker): de 10 en 10 (0, 10 … 90) para no redibujar la barra de avisos con
+     * cada trozo que baja Play; -1 si Play aún no sabe el tamaño. Nunca 100: al terminar ya sale «Reiniciar».
+     */
+    fun downloadStep(bytesDownloaded: Long, totalBytes: Long): Int =
+        if (totalBytes <= 0L) -1 else (bytesDownloaded * 100 / totalBytes).toInt().coerceIn(0, 99) / 10 * 10
 }

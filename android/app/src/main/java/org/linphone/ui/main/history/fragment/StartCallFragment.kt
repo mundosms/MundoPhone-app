@@ -21,9 +21,11 @@ package org.linphone.ui.main.history.fragment
 
 import android.annotation.SuppressLint
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import androidx.activity.OnBackPressedCallback
 import androidx.annotation.UiThread
 import androidx.core.view.doOnPreDraw
@@ -96,7 +98,21 @@ class StartCallFragment : GenericAddressPickerFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         viewModel = ViewModelProvider(this)[StartCallViewModel::class.java]
 
-        postponeEnterTransition()
+        // MundoPhone: sin postponeEnterTransition(): la pantalla no espera a la lista de contactos. Esperándola no se
+        // veía hasta 400-500 ms después del toque (Galaxy A52s, ~1.500 contactos); con un tope de 100 ms, a los 185 ms
+        // (la lista nunca llegaba antes). Con pocos contactos la lista aparece un instante después de la pantalla.
+        // MundoPhone: cuándo se ve de verdad (con la entrada pospuesta, la vista existe antes de verse) y si la lista ya había
+        // llegado: con «Navigating to start call fragment» da lo que espera el usuario tras tocar
+        val creada = SystemClock.elapsedRealtime()
+        view.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                if (view.alpha > 0f && view.isShown) {
+                    if (view.viewTreeObserver.isAlive) view.viewTreeObserver.removeOnPreDrawListener(this)
+                    Log.i("$TAG Visible [${SystemClock.elapsedRealtime() - creada}] ms after creation, list ready [${viewModel.modelsList.value != null}]")
+                }
+                return true
+            }
+        })
         super.onViewCreated(view, savedInstanceState)
 
         binding.lifecycleOwner = viewLifecycleOwner
